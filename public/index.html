@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Class</title>
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" href="/class-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+<svg class="icon-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="7" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 4a3 3 0 0 1 0 6M21 21v-3a6 6 0 0 0-4-5.65"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M6.2 6.2A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.8 5.8"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v10M6 5a9 9 0 1 0 12 0"/></symbol>
+  <symbol id="i-board" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="m8 22 4-5 4 5M7 9h5M7 12h9"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="m9.5 3-.6 2.4-1.8 1L4.7 6.7 2.5 10.5l1.8 1.7v2.1l-1.8 1.8 2.2 3.8 2.4-.7 1.8 1 .6 2.3h4.4l.6-2.3 1.8-1 2.4.7 2.2-3.8-1.8-1.8v-2.1l1.8-1.7-2.2-3.8-2.4.7-1.8-1-.6-2.4z" transform="translate(.3 -1.4) scale(.97)"/><circle cx="12" cy="12" r="3.2"/></symbol>
+  <symbol id="i-logs" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></symbol>
+  <symbol id="i-answer" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 15l2.5 2.5L16 12"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v2M3 7v12a2 2 0 0 0 2 2h13a2 2 0 0 0 2-1.6L22 10H6z"/></symbol>
+</defs></svg>
+<div class="app-shell">
+  <aside class="sidebar">
+    <a href="#" class="brand" aria-label="Class 课堂"><span class="brand-mark"><img src="/class-icon.svg" alt="" width="44" height="44"></span><span class="brand-name">Class</span><span class="brand-sub">共享思考，协同处理</span></a>
+    <nav aria-label="主导航">
+      <button class="nav-item active" data-page="workspace" aria-label="课堂"><svg><use href="#i-grid"/></svg><span>课堂</span></button>
+      <button class="nav-item" data-page="agents" aria-label="教室管理"><svg><use href="#i-users"/></svg><span>教室管理</span></button>
+      <button class="nav-item" data-page="history" aria-label="讨论记录"><svg><use href="#i-clock"/></svg><span>讨论记录</span></button>
+      <button class="nav-item" data-page="memory" aria-label="记忆管理"><svg><use href="#i-logs"/></svg><span>记忆管理</span></button>
+    </nav>
+  </aside>
+  <div class="main-shell">
+    <header class="topbar"><div class="topbar-actions"><span class="connection" id="connection-status"><i></i> 正在连接</span><button class="text-button" id="shutdown-button"><svg><use href="#i-power"/></svg><span>退出服务</span></button></div></header>
+    <main>
+      <section id="access-notice" class="access-notice" hidden><span class="eyebrow">本地连接</span><h2 id="access-title">请从桌面程序打开工作空间</h2><p id="access-message">启动 Class，程序会启动本地服务并自动打开已连接的页面。</p><button class="button secondary" id="reconnect-button" hidden>重新连接</button></section>
+      <section class="page" id="page-workspace">
+        <div class="setup-callout" id="setup-callout"><div class="setup-icon"><svg><use href="#i-users"/></svg></div><div><strong>组建你的讨论小组</strong></div><button class="button secondary" data-go-agents>配置成员 <svg class="setup-arrow" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5"/></svg></button></div>
+        <div class="workspace-grid">
+          <div class="task-column">
+            <section class="card task-card"><div class="section-heading"><div class="section-title"><h2>布置任务</h2></div><div class="section-controls"><button id="answer-button" type="button" class="workspace-icon-button" aria-label="答案" title="答案" aria-haspopup="dialog" aria-controls="answer-dialog"><svg aria-hidden="true"><use href="#i-answer"/></svg></button><button id="team-button" type="button" class="workspace-icon-button" aria-label="小组成员" title="小组成员" aria-haspopup="dialog" aria-controls="team-dialog"><svg aria-hidden="true"><use href="#i-users"/></svg></button><button id="settings-button" type="button" class="workspace-icon-button" aria-label="运行设置" title="运行设置" aria-haspopup="dialog" aria-controls="settings-dialog"><svg aria-hidden="true"><use href="#i-settings"/></svg></button></div></div>
+              <form id="task-form"><label class="field-label" for="task-input">你希望解决什么问题？</label><textarea id="task-input" rows="6" placeholder="在此描述你的问题与要求，老师会将同一个任务交给所有学生独立求解。" required></textarea>
+                <div class="task-actions"><button id="start-button" type="submit" class="button primary"><svg><use href="#i-play"/></svg>开始讨论</button><button id="stop-button" type="button" class="button danger" hidden><svg><use href="#i-stop"/></svg>停止任务</button></div>
+              </form>
+            </section>
+          </div>
+          <div class="live-column">
+            <section class="card progress-card"><div class="section-heading"><div class="section-title progress-title"><h2>讨论进度</h2><span id="run-elapsed" class="run-elapsed" aria-label="运行时间">00:00:00</span></div><div class="section-controls"><button id="clear-task-button" type="button" class="workspace-icon-button clear-task-button" aria-label="清除任务" title="清除任务" disabled><svg aria-hidden="true"><use href="#i-trash"/></svg></button><button id="logs-button" type="button" class="workspace-icon-button" aria-label="讨论日志" title="讨论日志" aria-haspopup="dialog" aria-controls="logs-dialog"><svg aria-hidden="true"><use href="#i-logs"/></svg></button><span id="run-status" class="status-badge idle">等待开始</span></div></div><div class="workflow" id="workflow" aria-label="讨论进度"><div data-stage="assigned"><span>1</span><b>任务下达</b></div><i></i><div data-stage="solving"><span>2</span><b>并行求解</b></div><i></i><div data-stage="judging"><span>3</span><b>老师验收</b></div></div><p id="review-progress" class="review-progress" role="status" hidden></p><div id="run-error" class="inline-error" hidden></div><div id="member-recovery" class="member-recovery" aria-live="polite" hidden></div></section>
+            <section class="blackboard"><div class="board-heading"><h2><svg aria-hidden="true"><use href="#i-board"/></svg>黑板</h2><div class="board-tools"><span class="board-count" id="board-count">0 项成果 · 0 条发现</span><button id="evidence-button" type="button" class="workspace-icon-button" aria-label="运行档案" title="运行档案" aria-haspopup="dialog" aria-controls="evidence-dialog"><svg aria-hidden="true"><use href="#i-folder"/></svg></button></div></div><div id="blackboard-content" tabindex="0" role="region" aria-label="黑板成果、发现与老师结论"><div class="board-empty"><div class="chalk-diagram"><span>独立成果</span><i>＋</i><span>共同发现</span><i>→</i><strong>完整答案</strong></div><h3>每一轮成果，都留在黑板上</h3><p>学生的提交、老师的结论与发现投票会在这里保留。<br>最终综合答案通过验收后置顶展示。</p></div></div></section>
+          </div>
+        </div>
+      </section>
+      <section class="page" id="page-agents" hidden><div class="page-heading compact-page-heading"><button class="button primary" id="add-agent-button"><svg><use href="#i-plus"/></svg>添加成员</button></div><div id="agents-content"></div></section>
+      <section class="page" id="page-history" hidden>
+        <div class="page-heading compact-page-heading"><span id="history-count" class="edition-label">0 次讨论</span></div>
+        <div id="history-content" class="card history-card"></div>
+        <form id="data-directory-form" class="storage-directory-form">
+          <label for="data-directory-input">本地数据目录</label>
+          <div class="storage-directory-controls"><div class="directory-input"><input id="data-directory-input" name="path" required autocomplete="off" spellcheck="false" aria-describedby="data-directory-status"><button id="data-directory-button" type="button" class="directory-picker" aria-label="选择本地数据目录" title="选择本地数据目录"><svg aria-hidden="true"><use href="#i-folder"/></svg></button></div><button id="data-directory-save" class="button secondary" type="submit" title="将当前数据迁移到新的空目录">迁移到空目录</button><button id="data-directory-load" class="button secondary" type="button" title="加载已有配置和会话，不复制当前数据">加载已有目录</button></div>
+          <p id="data-directory-status" class="storage-directory-status" role="status" aria-live="polite" hidden></p>
+          <p id="data-directory-warning" class="storage-directory-warning" role="status" aria-live="polite" hidden></p>
+          <details id="storage-warning-history" class="storage-warning-history" hidden><summary id="storage-warning-count">存储错误记录</summary><div id="storage-warning-list"></div></details>
+        </form>
+      </section>
+      <section class="page memory-page" id="page-memory" hidden>
+        <div class="page-heading compact-page-heading memory-heading"><button type="button" class="workspace-icon-button" id="memory-settings-button" aria-label="记忆设置" title="记忆设置" aria-haspopup="dialog" aria-controls="memory-settings-dialog"><svg aria-hidden="true"><use href="#i-settings"/></svg></button><button type="button" class="workspace-icon-button" id="memory-refresh" aria-label="刷新记忆" title="刷新记忆"><svg aria-hidden="true"><use href="#i-refresh"/></svg></button></div>
+        <p id="memory-error" class="inline-error" role="alert" hidden></p>
+        <section id="memory-entries-panel" aria-label="长期记忆">
+          <form id="memory-entry-search" class="memory-search-form card"><label class="memory-query">查找长期记忆<input id="memory-entry-query" type="search" placeholder="输入关键词" maxlength="500"></label><label>状态<select id="memory-entry-status"><option value="">全部状态</option><option value="active">已启用</option><option value="paused">已暂停</option><option value="invalid">已失效</option></select></label><label>记忆类型<select id="memory-entry-kind"><option value="">全部类型</option><option value="user">用户画像</option><option value="agent">Agent画像</option></select></label><button type="submit" class="button secondary">查询</button></form>
+          <div id="memory-entries-content" class="memory-list" aria-live="polite"></div><div class="evidence-pagination memory-pagination"><button type="button" id="memory-entries-prev" class="button secondary" disabled>上一页</button><span id="memory-entries-page" role="status"></span><button type="button" id="memory-entries-next" class="button secondary" disabled>下一页</button></div>
+        </section>
+      </section>
+    </main>
+  </div>
+</div>
+<dialog closedby="none" id="answer-dialog" class="agent-dialog workspace-dialog answer-dialog" aria-labelledby="answer-dialog-title">
+  <div class="dialog-heading"><h2 id="answer-dialog-title">答案</h2><button type="button" class="icon-button" data-dialog-close="answer-dialog" aria-label="关闭答案"><svg aria-hidden="true"><use href="#i-close"/></svg></button></div>
+  <div class="dialog-body"><div id="answer-empty" class="empty-small">暂无答案。任务结束后，可在这里查看老师验收的结果。</div><section id="result-panel" class="card result-panel" hidden><div class="section-heading"><h3 id="result-summary-title" class="result-summary-title">汇总结果</h3><span id="result-status" class="result-status" role="status"></span></div><div id="result-content" class="result-content"></div></section></div>
+</dialog>
+<dialog closedby="none" id="evidence-dialog" class="agent-dialog workspace-dialog evidence-dialog" aria-labelledby="evidence-dialog-title">
+  <div class="dialog-heading"><h2 id="evidence-dialog-title">运行档案</h2><button type="button" class="icon-button" data-dialog-close="evidence-dialog" aria-label="关闭运行档案"><svg aria-hidden="true"><use href="#i-close"/></svg></button></div>
+  <div class="evidence-filters" id="evidence-filters"><label class="evidence-reference-label">证据引用<input id="evidence-reference" autocomplete="off" placeholder="留空查看全部记录"></label><label>成员<select id="evidence-member"><option value="">所有成员</option></select></label><label>记录类型<select id="evidence-kind"><option value="">所有类型</option><option value="outcome">正式成果</option><option value="tool">工具成果</option><option value="tool_validation">工具恢复记录</option><option value="student_result">学生成果</option><option value="review_snapshot">全员审查快照</option><option value="review">老师审查</option><option value="event">运行事件</option><option value="result">任务结果</option></select></label><button id="evidence-search" type="button" class="button secondary">查询</button></div>
+  <button id="evidence-back" type="button" class="link-button" hidden>返回档案记录</button>
+  <button id="evidence-return-logs" type="button" class="link-button" hidden>返回讨论日志</button>
+  <p id="evidence-error" class="inline-error" role="alert" hidden></p>
+  <button id="evidence-retry" type="button" class="link-button" hidden>重新读取本页</button>
+  <p id="evidence-warning" class="storage-directory-warning evidence-warning" role="status" hidden></p>
+  <div id="evidence-content" class="evidence-content" role="region" aria-label="档案内容" tabindex="0"></div>
+  <div class="evidence-pagination"><button id="evidence-prev" type="button" class="button secondary" disabled>上一页</button><span id="evidence-page" role="status"></span><button id="evidence-next" type="button" class="button secondary" disabled>下一页</button></div>
+</dialog>
+<dialog closedby="none" id="settings-dialog" class="agent-dialog workspace-dialog settings-dialog" aria-labelledby="settings-dialog-title">
+  <div class="dialog-heading"><h2 id="settings-dialog-title">运行设置</h2><button type="button" class="icon-button" data-dialog-close="settings-dialog" aria-label="关闭运行设置"><svg aria-hidden="true"><use href="#i-close"/></svg></button></div>
+  <div class="dialog-body"><form id="settings-form" class="settings-form">
+    <div class="directory-field"><label for="setting-cwd">工作目录</label><div class="directory-input"><input id="setting-cwd" name="cwd" readonly required><button id="setting-directory-button" type="button" class="directory-picker" aria-label="选择工作目录" title="选择工作目录"><svg aria-hidden="true"><use href="#i-folder"/></svg></button></div></div>
+    <label>投票上限（秒）<input id="setting-vote" name="voteTimeoutMs" type="number" min="0.1" step="0.1" required></label>
+    <p id="settings-dirty" class="field-note" hidden>设置已更改，保存后用于下一次运行。</p>
+    <div class="dialog-actions"><button type="submit" id="settings-save" class="button secondary">保存</button></div>
+  </form></div>
+</dialog>
+<dialog closedby="none" id="team-dialog" class="agent-dialog workspace-dialog team-dialog" aria-labelledby="team-dialog-title">
+  <div class="dialog-heading"><h2 id="team-dialog-title">小组成员</h2><button type="button" class="icon-button" data-dialog-close="team-dialog" aria-label="关闭小组成员"><svg aria-hidden="true"><use href="#i-close"/></svg></button></div>
+  <div class="dialog-body"><div id="team-list" class="team-list"><div class="empty-small">尚未添加成员</div></div></div>
+  <div class="dialog-actions"><button type="button" class="button secondary manage-members-button" data-go-agents>管理成员 <svg class="manage-arrow" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5"/></svg></button></div>
+</dialog>
+<dialog closedby="none" id="logs-dialog" class="agent-dialog workspace-dialog logs-dialog" aria-labelledby="logs-dialog-title">
+  <div class="dialog-heading"><h2 id="logs-dialog-title">讨论日志</h2><div class="section-controls"><span id="event-count" class="subtle-label">实时更新</span><button type="button" class="icon-button" data-dialog-close="logs-dialog" aria-label="关闭讨论日志"><svg aria-hidden="true"><use href="#i-close"/></svg></button></div></div>
+  <div class="dialog-body"><p id="activity-summary" class="activity-summary" hidden></p><div id="timeline" class="timeline"><div class="empty-small">任务开始后，在这里跟进每一步进展。</div></div></div>
+</dialog>
+<dialog closedby="none" id="agent-dialog" class="agent-dialog"><form id="agent-form">
+  <div class="dialog-heading"><div><h2 id="agent-dialog-title">添加成员</h2></div><button type="button" class="icon-button" id="agent-close" aria-label="关闭"><svg><use href="#i-close"/></svg></button></div>
+  <input type="hidden" id="agent-id">
+  <div class="field-grid"><label>成员名称<input id="agent-name" maxlength="80" required placeholder="例如：逻辑推导者"></label><label>角色<select id="agent-role"><option value="student">学生 · 独立求解与投票</option><option value="teacher">老师 · 任务下发与验收</option></select></label></div>
+  <label>接口模式<select id="agent-protocol" aria-describedby="agent-url-help"><option value="messages" selected>Messages</option><option value="responses">Responses</option><option value="chat">Chat</option></select></label>
+  <label>baseurl<input id="agent-url" type="url" required placeholder="https://api.openai.com/v1" aria-describedby="agent-url-help agent-endpoint"><small id="agent-url-help">Class 会追加 /v1/messages；baseurl 末尾已有 /v1 时不会重复拼接。</small><small id="agent-endpoint" class="endpoint-preview" aria-live="polite">填写基础地址后预览完整请求地址。</small></label>
+  <label>apikey <span id="key-state" class="subtle-label"></span><input id="agent-key" type="password" autocomplete="new-password" placeholder="输入apikey"><small id="key-help" hidden></small></label>
+  <label>模型名称<input id="agent-model" required placeholder="输入模型名称"></label>
+  <label>思考深度<select id="agent-reasoning" required aria-describedby="agent-reasoning-help"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option><option value="xhigh">xHigh</option><option value="max">Max</option><option value="ultracode">Ultracode</option></select><small id="agent-reasoning-help">具体可用档位取决于接口和模型。</small></label>
+  <div class="agent-context-field"><label id="agent-context-title" for="agent-context-1m">上下文容量</label><label class="checkbox-label"><input id="agent-context-1m" type="checkbox" aria-labelledby="agent-context-title agent-context-option"><span id="agent-context-option">1M</span></label></div>
+  <div class="dialog-actions"><button type="submit" class="button primary" id="agent-save">保存</button></div>
+</form></dialog>
+<dialog closedby="none" id="memory-settings-dialog" class="agent-dialog workspace-dialog memory-settings-dialog" aria-labelledby="memory-settings-title">
+  <div class="dialog-heading"><h2 id="memory-settings-title">记忆设置</h2><div class="section-controls memory-settings-heading-actions"><span id="memory-state" class="status-badge idle" role="status" aria-live="polite">正在读取</span><button type="button" class="icon-button" data-dialog-close="memory-settings-dialog" aria-label="关闭记忆设置"><svg aria-hidden="true"><use href="#i-close"/></svg></button></div></div>
+  <div class="dialog-body">
+    <p id="memory-summary" class="field-note" role="status" aria-live="polite"></p>
+    <form id="memory-settings-form" class="memory-settings-form"><label class="checkbox-label"><input id="memory-enabled" type="checkbox"><span>启用记忆</span></label><div class="dialog-actions"><button type="button" class="button secondary" id="memory-reflect">整理记忆</button><button type="submit" class="button secondary" id="memory-settings-save">保存设置</button></div></form>
+  </div>
+</dialog>
+<dialog closedby="none" id="memory-entry-dialog" class="agent-dialog workspace-dialog memory-entry-dialog" aria-labelledby="memory-entry-title">
+  <form id="memory-entry-form"><div class="dialog-heading"><h2 id="memory-entry-title">编辑记忆</h2><button type="button" class="icon-button" data-dialog-close="memory-entry-dialog" aria-label="关闭记忆编辑"><svg aria-hidden="true"><use href="#i-close"/></svg></button></div><input id="memory-edit-id" type="hidden">
+    <div class="field-grid"><label>记忆类型<select id="memory-edit-kind" disabled><option value="user">用户画像</option><option value="agent">Agent画像</option></select></label><label>内容类型<select id="memory-edit-category"><option value="fact">事实</option><option value="inference">推断</option><option value="preference">偏好</option><option value="experience">经验</option></select></label></div>
+    <div class="field-grid"><label>状态<select id="memory-edit-status"><option value="active">已启用</option><option value="paused">已暂停</option><option value="invalid">已失效</option></select></label><label>关联成员<select id="memory-edit-agent" disabled><option value="">共享</option></select></label></div>
+    <label>内容<textarea id="memory-edit-content" rows="7" required maxlength="16000" placeholder="记录准确、可复用的信息"></textarea></label>
+    <label>来源引用<textarea id="memory-edit-sources" rows="3" spellcheck="false" placeholder="每行一个来源引用"></textarea><small>从会话原始记录中复制引用。个人角色的原始记录只能用于该角色的记忆。</small></label><label>有效期至（可选）<input id="memory-edit-expires" type="datetime-local"></label><div class="dialog-actions"><button type="submit" class="button primary" id="memory-entry-save">保存记忆</button></div>
+  </form>
+</dialog>
+<dialog closedby="none" id="memory-session-dialog" class="agent-dialog workspace-dialog memory-session-dialog" aria-labelledby="memory-session-title">
+  <div class="dialog-heading"><h2 id="memory-session-title">来源原文</h2><button type="button" class="icon-button" data-dialog-close="memory-session-dialog" aria-label="关闭来源原文"><svg aria-hidden="true"><use href="#i-close"/></svg></button></div><p id="memory-session-meta" class="field-note"></p>
+  <form id="memory-context-form" class="memory-context-form"><label>来源引用<input id="memory-context-reference" autocomplete="off" placeholder="留空查看完整会话"></label><button type="submit" class="button secondary">定位</button></form><p id="memory-context-error" class="inline-error" role="alert" hidden></p>
+  <div id="memory-context-content" class="memory-context-content" tabindex="0" role="region" aria-label="会话原始记录"></div><div class="evidence-pagination"><button type="button" id="memory-context-prev" class="button secondary" disabled>上一页</button><span id="memory-context-page" role="status"></span><button type="button" id="memory-context-next" class="button secondary" disabled>下一页</button></div>
+  <div class="memory-session-actions"><button type="button" id="memory-extract" class="button secondary">整理此会话的记忆</button><button type="button" id="memory-forget" class="button danger">删除会话及关联记忆</button></div>
+</dialog>
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+</body>
+</html>

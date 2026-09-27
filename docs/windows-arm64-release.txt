@@ -1,0 +1,17 @@
+Class 1.0.0 for Windows ARM64
+
+本包适用于 Windows ARM64 设备，主程序和目录选择器均为 ARM64 架构。
+目录选择器使用 Windows 的 .NET Framework 4.8.1；请使用已安装该组件的 Windows 11 ARM64 系统，Windows 11 22H2 起内置该组件。
+2026-09-27（Asia/Shanghai），已在 Windows 11 ARM64 原生环境通过五套独立发布验收，使用隔离数据和本地模拟模型。
+报告：https://github.com/dsgymz/class_test/actions/runs/36258965980
+该结果不等于全部源码单元测试或真实模型质量测试通过。
+
+使用方法：解压整个压缩包，双击 Class.exe，保留同目录中的第三方许可证声明。
+无需另外安装 Node.js、Bun 或源码依赖，界面通过本机浏览器打开。
+首次使用需要配置自己的模型接口、模型名称和 API Key。
+正常模型任务需要能够访问所配置的接口；浏览器及命令工具需要相应的本地程序。
+
+用户配置、会话和记忆保存在用户自己的数据目录，此发布包不含开发者运行数据。
+已有用户请继续使用原先选择的数据目录。
+
+本包下载校验清单为 SHA256SUMS-windows-arm64.txt。Linux 提供独立发布包，目前不提供 macOS 构建。

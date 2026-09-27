@@ -1,0 +1,17 @@
+Class 1.0.0 for Windows x64
+
+使用方法：解压整个压缩包，然后双击 Class.exe。请保留同目录中的第三方许可证声明。
+无需安装 Node.js、Bun 或源码依赖。界面会通过本机浏览器打开。
+首次使用需要在界面中填写自己的模型接口、模型名称和 API Key。
+正常模型任务需要能够访问所配置的接口；部分外部工具还需要相应浏览器或命令行程序。
+
+Class 会在首次运行时建立用户自己的数据目录；此发布包不包含开发者的配置、会话或记忆。
+移动程序文件不等于移动数据。已有用户请继续使用原先选择的数据目录。
+
+本包面向 Windows x64，目录选择器使用系统 .NET Framework 4.x。
+ARM64 设备请选择单独的 Windows ARM64 发布包；Linux 另有独立发布包，目前不提供 macOS 构建。
+本包下载校验清单为 SHA256SUMS-windows-x64.txt，另保留 SHA256SUMS.txt。
+
+2026-09-27（Asia/Shanghai）的三平台原生发布验收记录：
+https://github.com/dsgymz/class_test/actions/runs/36258965980
+该次运行覆盖 Windows ARM64 和 Linux 两种架构，不包含 Windows x64 云端验收。

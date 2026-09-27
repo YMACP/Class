@@ -1,0 +1,32 @@
+Class 1.0.0 for Linux amd64 / arm64
+
+按设备架构下载对应的 Class-1.0.0-linux-amd64.tar.gz 或 Class-1.0.0-linux-arm64.tar.gz。
+本包为 glibc Linux 构建，已在 Ubuntu 24.04 AMD64 / ARM64 原生环境验收；Ubuntu 22.04 未在本轮验证，不适用于 Alpine/musl。
+2026-09-27（Asia/Shanghai），两种 Linux 架构各通过五套独立发布验收，使用隔离数据和本地模拟模型。
+报告：https://github.com/dsgymz/class_test/actions/runs/36258965980
+该结果不等于全部源码单元测试或真实模型质量测试通过。
+
+解压后运行：
+  ./Class
+应用会启动本机服务并打开默认浏览器；退出时点击界面的“退出服务”，或在终端按 Ctrl+C。
+无桌面自动打开需求时使用：
+  ./Class --no-browser --data-dir /绝对路径/class-data
+服务仅监听本机回环地址；浏览器入口与登录信息保存在选定的数据目录，不要分享登录信息。
+无需安装 Node.js、Bun 或 npm。模型任务需要配置自己的模型接口与 API Key。
+
+完整桌面功能需要默认浏览器及 xdg-open，选择文件夹需要 zenity 或 kdialog。
+Agent 浏览器自动化支持已安装的 Chrome、Firefox，也保留 Chromium。
+默认先查找 Chrome/Chromium，未找到时查找 Firefox；可用 CLASS_BROWSER_EXECUTABLE 指定完整绝对路径。
+Firefox 需要 149 或更新版本，以保持下载禁用。Class 不内置或自动下载浏览器，本次适配不增加运行时依赖。
+缺少可用浏览器时仅 browser 工具调用明确报错，不阻止其他任务。各浏览器共用暂停、恢复、取消与清理机制。
+实例和临时配置按成员隔离；Firefox 临时配置位于用户主目录下的 class-browser-*，结束时清理。
+命令工具使用 Bash。请以普通用户运行；浏览器使用其正常的系统沙箱。
+
+默认数据目录为 $XDG_DATA_HOME/class，未设置时为 ~/.local/share/class。
+Linux 凭据用 AES-256-GCM 保存，credentials.key 与密文均保存在用户私有的数据目录中。
+密钥和密文文件权限为 0600，数据目录为 0700；能读取整个目录的人可以解密凭据，这不等同系统密钥环。
+备份/迁移请保留整个数据目录；不要单独删除密钥，也不要把数据目录放进源码或发布包。
+Windows DPAPI 凭据不能直接在 Linux 上解密，跨系统迁移模型配置时需要重新配置密钥。
+
+保留 THIRD_PARTY_NOTICES.txt。manifest.json 记录目标架构、版本与文件 SHA256；压缩包校验见同次发布的 SHA256SUMS-linux-<架构>.txt。
+manifest.json 中 nativeRunVerified 记录构建阶段状态；后续原生运行验收以独立报告为准。

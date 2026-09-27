@@ -1,0 +1,23 @@
+# Installed dependencies and generated build assets
+/node_modules/
+/.bun-cache/
+/build/
+/dist/
+/coverage/
+/src/*.generated.js
+
+# Local configuration, task files, and runtime data
+/config.local.json
+.env
+.env.*
+!.env.example
+/workspace/
+/runs/
+/data/
+*.log
+*.tmp
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+/release-artifacts/

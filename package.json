@@ -1,0 +1,49 @@
+{
+  "name": "class-harness",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "prepare:assets": "node scripts/prepare-assets.js",
+    "pretest": "npm run prepare:assets",
+    "test": "node --test \"tests/*.test.js\"",
+    "prestart": "npm run prepare:assets",
+    "start": "node src/desktop.js",
+    "cli": "node src/cli.js",
+    "demo": "node src/cli.js --demo",
+    "build:windows": "node scripts/build-windows.js",
+    "build:windows:x64": "node scripts/build-windows.js --arch x64",
+    "build:windows:arm64": "node scripts/build-windows.js --arch arm64",
+    "build:verifier:x64": "node scripts/build-verifier.js --arch x64",
+    "build:verifier:arm64": "node scripts/build-verifier.js --arch arm64",
+    "build:linux": "node scripts/build-linux.js",
+    "build:linux:amd64": "node scripts/build-linux.js --arch amd64",
+    "build:linux:arm64": "node scripts/build-linux.js --arch arm64",
+    "build:verifier:linux:amd64": "node scripts/build-linux-verifier.js --arch amd64",
+    "build:verifier:linux:arm64": "node scripts/build-linux-verifier.js --arch arm64",
+    "package:linux": "npm run build:linux && node scripts/package-linux.js",
+    "package:linux:amd64": "npm run build:linux:amd64 && node scripts/package-linux.js --arch amd64",
+    "package:linux:arm64": "npm run build:linux:arm64 && node scripts/package-linux.js --arch arm64",
+    "package:windows": "npm run build:windows && node scripts/package-windows.js",
+    "package:windows:x64": "npm run build:windows:x64 && node scripts/package-windows.js --arch x64",
+    "package:windows:arm64": "npm run build:windows:arm64 && node scripts/package-windows.js --arch arm64",
+    "verify:windows": "npm run prepare:assets && node tests/release/verify-release.js",
+    "verify:memory": "npm run prepare:assets && node tests/release/verify-memory-release.js",
+    "verify:ui": "npm run prepare:assets && node tests/release/verify-memory-ui.js",
+    "verify:portable": "node tests/release/verify-portable.js",
+    "verify:platform": "npm run prepare:assets && node tests/release/verify-platform.js"
+  },
+  "description": "Local-first Class multi-agent harness with Windows and Linux launchers and Web UI",
+  "dependencies": {
+    "unpdf": "1.8.1"
+  },
+  "optionalDependencies": {
+    "@oven/bun-linux-x64-baseline": "1.4.2",
+    "@oven/bun-linux-aarch64": "1.4.2",
+    "@oven/bun-windows-x64-baseline": "1.4.2",
+    "@oven/bun-windows-aarch64": "1.4.2"
+  }
+}
