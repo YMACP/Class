@@ -24,11 +24,28 @@
   <img src="./README/class工作流.png" alt="Class 工作流：学生并行解题、共享发现、老师综合验收与反馈改进" width="100%" />
 </p>
 
-| 角色 | 职责 |
-| :-: | :-: |
-| **老师** | 下发题目、整理发现、验收反馈 |
-| **学生** | 独立解题、提交发现、参与投票 |
-| **共享黑板** | 记录发现、阶段成果和反馈，提供共享依据 |
+<table align="center">
+  <thead>
+    <tr>
+      <th align="center">角色</th>
+      <th align="center">职责</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td align="center"><strong>老师</strong></td>
+      <td align="center">下发题目、整理发现、验收反馈</td>
+    </tr>
+    <tr>
+      <td align="center"><strong>学生</strong></td>
+      <td align="center">独立解题、提交发现、参与投票</td>
+    </tr>
+    <tr>
+      <td align="center"><strong>共享黑板</strong></td>
+      <td align="center">记录发现、阶段成果和反馈，提供共享依据</td>
+    </tr>
+  </tbody>
+</table>
 
 <br>
 
