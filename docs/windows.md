@@ -2,18 +2,20 @@
 
 [返回首页](../README.md) · [模型配置](cli.md) · [工具能力](tools.md) · [记忆管理](memory.md)
 
-本页介绍 Windows x64 和 ARM64 发布包；Linux 另见 [Linux 使用指南](linux.md)，目前不提供 macOS 发布包。程序使用现代浏览器显示界面；浏览器自动化工具支持已安装的 Edge、Chrome 或 Firefox。x64 目录选择组件使用 .NET Framework 4.x；ARM64 版需要 Windows 11 ARM64 和 .NET Framework 4.8.1（Windows 11 22H2 起内置）。Windows 11 ARM64 已通过本轮五套独立发布验收，见 [ARM64 说明](windows-arm64.md) 与 [验收记录](native-acceptance.md)。
+本页介绍 Class 1.1.0 Windows x64 程序；Linux 另见 [Linux 使用指南](linux.md)。本轮不提供 ARM64 或 macOS 发布程序。程序使用现代浏览器显示界面；浏览器自动化工具支持已安装的 Edge、Chrome 或 Firefox，目录选择组件使用系统 .NET Framework 4.x。旧版 ARM64 的构建和验收资料保留在 [ARM64 说明](windows-arm64.md)，不代表本轮构建结果。
 
 浏览器工具默认优先查找 Edge/Chrome，未找到时查找 Firefox；特殊安装位置可通过 `CLASS_BROWSER_EXECUTABLE` 指定完整绝对路径。Firefox 需要 149 或更新版本，以保持下载禁用。Class 不内置或自动下载浏览器；本次适配不增加运行时依赖。缺少可用浏览器时会在调用 `browser` 工具时明确报错，不阻止其他任务。Agent 使用独立浏览器实例，不接管用于显示 Class 界面的日常浏览器；各浏览器共用原有暂停、恢复、取消和清理机制。
 
 ## 下载与首次运行
 
-1. 从项目 Releases 下载与设备匹配的 `Class-1.0.0-windows-x64.zip` 或 `Class-1.0.0-windows-arm64.zip`，完整解压后双击 **Class.exe**，并保留随包的 `THIRD_PARTY_NOTICES.txt` 和 `README.txt`。用同次发布的 `SHA256SUMS-windows-x64.txt` 或 `SHA256SUMS-windows-arm64.txt` 核对下载文件；x64 另保留 `SHA256SUMS.txt`。无需安装 Node.js、Bun 或 npm。本地构建输出在源码同级的 `../class-releases/windows-<架构>/Class.exe`。
+1. 从项目 Releases 下载 Windows x64 的 **Class.exe** 后双击。如果提供的是 `Class-1.1.0-windows-x64.zip`，先完整解压，并保留随包的许可证和说明；若发布附有 SHA256 清单，可用它核对下载文件。无需安装 Node.js、Bun 或 npm。本地构建输出在源码同级的 `../class-releases/windows-x64/Class.exe`。
 2. 程序在后台启动仅本机可访问的服务，并打开浏览器，无需保持命令行窗口。在界面中点击“退出服务”可停止程序。关闭浏览器标签页不会取消运行中的任务；再次双击 exe 会打开现有工作空间，不会重复启动服务。
 3. 在 **教室管理** 中添加 **1 名老师和 2–16 名学生**，填写成员名称、接口模式、baseurl、apikey 和模型名称。每个成员可以独立选择 Messages、Responses 或 Chat，支持混合小组。新增成员默认 Messages，已有成员保留原协议，未设置协议的旧配置按 Chat 处理。成员模态框不再显示探索视角和 JSON 模式；编辑已有成员时保留其已有配置。
 4. 根据接口模式填写 baseurl，再点击连接测试。Messages 自动追加 /v1/messages；Responses 和 Chat 保存时要求 baseurl 以 /v1 结尾，分别追加 /responses 和 /chat/completions。不要填写完整接口端点。
 5. 在课堂填写任务，点击“运行设置”图标后，通过文件夹按钮直接打开 Windows 原生文件夹选择窗口，选定本地工作目录，并按需调整投票时限，保存后开始讨论。老师和学生默认均可在工作目录执行命令。
 6. 点击“小组成员”“讨论日志”图标查看成员状态和进展。学生交卷触发可恢复暂停，老师综合全体学生已有成果审查；未通过时，黑板分别显示已核实事实、待解决项和建议，学生带上反馈继续同一次任务。最终通过后，点击“答案”图标查看综合答案与验收报告。黑板右上角文件夹图标可分页查询运行档案，工具长输出可继续翻页。无需模型的固定演示保留在命令行入口。
+
+1.1.0 提供可选的 [Jev 判断器](jev.md)，默认关闭，使用独立密钥；启用后按勾选环节直接应用，老师仍负责最终验收。
 
 ## 清除任务与本地数据
 

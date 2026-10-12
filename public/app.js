@@ -16,6 +16,7 @@
   let busy = false, shutdown = false, shuttingDown = false, pollTimer = null, lastConnection = true, refreshPending = false;
   let directoryPickerPending = false, directoryPickerTarget = '';
   let dataDirectoryDirty = false, dataDirectorySaving = false, stateEpoch = 0;
+  let judgeBusy = false, judgeCheckController = null;
   const pendingChecks = new Set();
   const pendingMemberRetries = new Set();
   const dialogReturnFocus = new WeakMap();
@@ -46,8 +47,8 @@
     item.innerHTML = icon(error ? 'close' : 'check') + '<span>' + esc(message) + '</span>';
     $('toasts').appendChild(item); while($('toasts').children.length>3)$('toasts').firstElementChild.remove(); setTimeout(() => item.remove(), error ? 9000 : 4500);
   }
-  async function api(url, {method = 'GET', body, raw = false, isCurrent = () => true} = {}) {
-    const response = await fetch(url, {method, headers:{Authorization:'Bearer ' + token, ...(body !== undefined ? {'Content-Type':'application/json'} : {})}, ...(body !== undefined ? {body:JSON.stringify(body)} : {}), cache:'no-store'});
+  async function api(url, {method = 'GET', body, raw = false, signal, isCurrent = () => true} = {}) {
+    const response = await fetch(url, {method, headers:{Authorization:'Bearer ' + token, ...(body !== undefined ? {'Content-Type':'application/json'} : {})}, ...(body !== undefined ? {body:JSON.stringify(body)} : {}), ...(signal ? {signal} : {}), cache:'no-store'});
     if (!response.ok) {
       let message; try { const result = await response.json(); message = storageDescription(result.storageError || result.storageDetails, result.error); } catch {}
       if ((response.status === 401 || response.status === 403) && isCurrent()) showAccess('连接凭据已失效', '请重新启动 Class，从程序自动打开的页面继续。');
@@ -107,7 +108,7 @@
     return run?.id === state?.run?.id && state?.run?.status === 'running' && failure?.canRetry === true && failure.status !== 'retrying';
   }
   function updateControls() {
-    const locked = busy || dataDirectorySaving || directoryPickerPending || Boolean(live()) || state?.relocating === true || !lastConnection || !token || shutdown || shuttingDown;
+    const locked = busy || judgeBusy || dataDirectorySaving || directoryPickerPending || Boolean(live()) || state?.relocating === true || !lastConnection || !token || shutdown || shuttingDown;
     $('start-button').disabled = locked || !teamReady();
     ['settings-button','team-button','logs-button','answer-button'].forEach(id => $(id).disabled = Boolean(clearingRunId) || shutdown || shuttingDown || !lastConnection || !token || !state);
     $('evidence-button').disabled = Boolean(clearingRunId) || shutdown || shuttingDown || !lastConnection || !token || !selectedRun()?.id;
@@ -127,6 +128,10 @@
     $('data-directory-load').disabled = locked || !dataDirectoryDirty || !$('data-directory-input').value.trim();
     $('data-directory-form').setAttribute('aria-busy',String(dataDirectorySaving));
     $('settings-form').querySelectorAll('input').forEach(input => input.disabled = locked);
+    $('judge-settings-button').disabled = judgeBusy || busy || shutdown || shuttingDown || !lastConnection || !state?.judge;
+    $('judge-settings-form').querySelectorAll('input,select,button').forEach(input => input.disabled = locked);
+    judgeFeatureVisibility(locked);
+    $('judge-settings-form').setAttribute('aria-busy',String(judgeBusy));
     $('agent-save').disabled = locked;
     document.querySelectorAll('[data-agent-edit],[data-agent-delete]').forEach(button => button.disabled = locked);
     document.querySelectorAll('[data-agent-check]').forEach(button => button.disabled = locked || pendingChecks.has(button.dataset.agentCheck));
@@ -144,6 +149,71 @@
     $('setting-cwd').value = s.cwd || '';
     $('setting-vote').value = (s.voteTimeoutMs ?? 30000) / 1000;
     settingsInitialized = true;
+  }
+  function judgeStatus(message = '', error = false) {
+    $('judge-check-status').textContent=message;$('judge-check-status').hidden=!message;$('judge-check-status').classList.toggle('error',error);
+  }
+  function setJudgeEnabled(enabled) {
+    $('judge-settings-form').dataset.enabled=String(enabled===true);
+    $('judge-enable').setAttribute('aria-pressed',String(enabled===true));
+    $('judge-disable').setAttribute('aria-pressed',String(enabled!==true));
+    judgeStatus();judgeFeatureVisibility();
+  }
+  function judgeFeatureVisibility(locked = false) {
+    const hasKey=$('judge-key').value.trim()||$('judge-settings-form').dataset.hasApiKey==='true';
+    const visible=$('judge-settings-form').dataset.enabled==='true'&&Boolean(hasKey);
+    $('judge-features').hidden=!visible;$('judge-features').disabled=locked||!visible;
+  }
+  function renderJudgeStats() {
+    const stats=selectedRun()?.judgeStats;$('judge-run-stats').hidden=!stats;
+    if(!stats)return;
+    const count=value=>Number.isFinite(value)&&value>=0?Math.round(value).toLocaleString():'0';
+    $('judge-run-status').textContent=!stats.enabled?'本次任务未启用 Jev':stats.mode==='shadow'?'历史任务：仅统计，未应用判断':'已启用 · 按所选环节应用';
+    $('judge-run-requests').textContent=count(stats.requests);$('judge-run-timeouts').textContent=count(stats.timeouts);
+    $('judge-run-fallbacks').textContent=count((Number(stats.failures)||0)+(Number(stats.unclear)||0));
+    $('judge-run-saved').textContent=count(stats.savedChars);$('judge-run-latency').textContent=count(stats.totalLatencyMs)+' ms';
+    $('judge-run-usage').hidden=!(stats.inputTokens||stats.outputTokens);
+    $('judge-run-usage').textContent=`接口报告用量：输入 ${count(stats.inputTokens)} / 输出 ${count(stats.outputTokens)} tokens`;
+  }
+  function openJudgeSettings() {
+    if(!state?.judge||judgeBusy||busy)return;
+    if(document.querySelector('dialog[open]'))return;
+    const config=state.judge;$('judge-settings-form').reset();
+    $('judge-url').value=config.baseUrl;$('judge-key').value='';
+    $('judge-key-state').textContent=config.hasApiKey?'已保存':'';$('judge-key').placeholder='输入Jev密钥';
+    for(const [feature,id] of [['taskDispatch','task-dispatch'],['toolCalls','tool-calls'],['toolResults','tool-results'],['submissionReview','submission-review']])$('judge-'+id).checked=config.features?.[feature]===true;
+    $('judge-timeout').value=config.timeoutMs;$('judge-min-output').value=config.minOutputChars;
+    $('judge-settings-form').dataset.maxConcurrency=String(config.maxConcurrency);
+    $('judge-settings-form').dataset.hasApiKey=String(config.hasApiKey===true);
+    setJudgeEnabled(config.enabled);renderJudgeStats();openDialog('judge-settings-dialog',$('judge-settings-button'));updateControls();
+  }
+  function judgeSettingsBody() {
+    const body={enabled:$('judge-settings-form').dataset.enabled==='true',protocol:'system-one',baseUrl:$('judge-url').value.trim(),model:'jev-latest',timeoutMs:Number($('judge-timeout').value),minOutputChars:Number($('judge-min-output').value),maxConcurrency:Number($('judge-settings-form').dataset.maxConcurrency),features:{taskDispatch:$('judge-task-dispatch').checked,toolCalls:$('judge-tool-calls').checked,toolResults:$('judge-tool-results').checked,submissionReview:$('judge-submission-review').checked}};
+    if($('judge-key').value.trim())body.apiKey=$('judge-key').value.trim();
+    return body;
+  }
+  async function saveJudgeSettings() {
+    if(judgeBusy||$('judge-save').disabled)return;
+    if(!$('judge-key').value.trim()&&$('judge-settings-form').dataset.hasApiKey!=='true'){judgeStatus('尚未配置Jev密钥',true);return;}
+    if(!$('judge-settings-form').reportValidity())return;
+    const dialog=$('judge-settings-dialog'),session=dialogSessions.get(dialog),body=judgeSettingsBody();
+    judgeBusy=true;judgeStatus();updateControls();
+    try{
+      const result=await api('/api/judge',{method:'PUT',body});
+      stateEpoch++;state={...state,judge:result.judge};
+      if(closeSavedDialog('judge-settings-dialog',session))$('judge-key').value='';
+      toast('Jev设置已保存。');
+    }catch(error){if(dialog.open&&dialogSessions.get(dialog)===session)judgeStatus(error.message,true);else toast(error.message,true);}
+    finally{judgeBusy=false;updateControls();}
+  }
+  async function checkJudgeConnection() {
+    if(judgeBusy||$('judge-check').disabled||!$('judge-settings-form').reportValidity())return;
+    const dialog=$('judge-settings-dialog'),session=dialogSessions.get(dialog),controller=new AbortController();
+    const current=()=>dialog.open&&dialogSessions.get(dialog)===session&&!controller.signal.aborted;
+    judgeCheckController=controller;judgeBusy=true;judgeStatus('正在测试连接…');updateControls();
+    try{const result=await api('/api/judge/check',{method:'POST',body:judgeSettingsBody(),signal:controller.signal,isCurrent:current});if(current())judgeStatus(result.message,result.ok!==true);}
+    catch(error){if(current())judgeStatus(error.message,true);}
+    finally{if(judgeCheckController===controller)judgeCheckController=null;judgeBusy=false;updateControls();}
   }
   function renderTeam() {
     const agents = state?.agents || [];
@@ -551,7 +621,7 @@
   const memoryViews = {entries:{offset:0,nextOffset:null,total:0,loading:false,request:0,loaded:false}};
   let memoryStatus = null, memoryStatusRequest = 0, memoryStatusLoading = false, memoryLastStatus = 0;
   let memoryBusy = false, memorySettingsDirty = false, memoryContext = null, memoryContextRequest = 0, memoryDataDir = '';
-  let memoryRequestedJob = null;
+  let memoryRequestedJob = null, memoryClearing = false;
   function memoryError(message = '') { $('memory-error').textContent=message; $('memory-error').hidden=!message; }
   function memoryDeletionNotice(result, completedMessage) {
     if(result?.memoryCleanupPending!==true)return {pending:false,message:completedMessage};
@@ -577,6 +647,9 @@
   function memoryControls() {
     const locked=memoryBusy||shutdown||shuttingDown||!lastConnection||!token||state?.relocating===true;
     $('page-memory').querySelectorAll('button').forEach(button=>{button.disabled=locked;});
+    $('memory-clear').disabled=locked||!memoryStatus||memoryStatus.available===false;
+    $('memory-clear').setAttribute('aria-busy',String(memoryClearing));
+    $('memory-clear').title=memoryClearing?'正在清空长期记忆…':'清空长期记忆';
     $('memory-enabled').disabled=locked||!memoryStatus;
     $('memory-settings-save').disabled=locked||!memorySettingsDirty||!memoryStatus;
     for(const name of ['entries']){
@@ -676,6 +749,22 @@
     if(!['active','paused'].includes(status))return;
     await memoryAction(async()=>{await api('/api/memory/entries/'+encodeURIComponent(id),{method:'PUT',body:{status}});toast(status==='active'?'记忆已启用。':'记忆已暂停。');await loadMemoryEntries(memoryViews.entries.offset);});
   }
+  async function clearLongTermMemory() {
+    if(memoryBusy||$('memory-clear').disabled)return;
+    if(!confirm('清空所有长期记忆？包含全部类型和状态，不受当前筛选影响。\n原始会话记录会保留，后续新会话仍可生成新记忆。此操作无法撤销。'))return;
+    await memoryAction(async()=>{
+      memoryClearing=true;memoryControls();
+      try{
+        await api('/api/memory/entries',{method:'DELETE'});
+        // Ignore responses started before the clear, then reload from page one.
+        memoryStatusRequest++;memoryRequestedJob=null;
+        const view=memoryViews.entries;view.request++;view.offset=0;view.nextOffset=null;view.loaded=false;
+        if(memoryStatus)memoryStatus={...memoryStatus,memories:0};
+        memoryRenderStatus();await loadMemoryEntries();
+        toast('所有长期记忆已清空，原始会话记录已保留。');
+      }finally{memoryClearing=false;memoryControls();}
+    });
+  }
   async function saveMemorySettings() {
     const session=dialogSessions.get($('memory-settings-dialog')),body={enabled:$('memory-enabled').checked};
     await memoryAction(async()=>{await api('/api/memory/settings',{method:'PUT',body});memorySettingsDirty=false;closeSavedDialog('memory-settings-dialog',session);toast('记忆设置已保存。');});
@@ -742,7 +831,7 @@
   }
   let agentsStamp='', historyStamp='';
   function render() {
-    fillSettings(); fillDataDirectory(); fillTaskInput(); renderStorageNotices(); renderRun(); renderTeam();
+    fillSettings(); fillDataDirectory(); fillTaskInput(); renderStorageNotices(); renderRun(); renderTeam(); renderJudgeStats();
     const nextAgents=JSON.stringify(state?.agents), nextHistory=JSON.stringify(state?.history);
     if(nextAgents!==agentsStamp){agentsStamp=nextAgents;renderAgents();}
     if(nextHistory!==historyStamp){historyStamp=nextHistory;renderHistory();}
@@ -1004,6 +1093,13 @@
     const body={cwd:$('setting-cwd').value.trim(),voteTimeoutMs:Math.round(Number($('setting-vote').value)*1000)};
     await api('/api/settings',{method:'PUT',body});if(closeSavedDialog('settings-dialog',session)){settingsDirty=false;$('settings-dirty').hidden=true;}toast('运行设置已保存。');
   });});
+  $('judge-settings-button').addEventListener('click',openJudgeSettings);
+  $('judge-settings-form').addEventListener('submit',event=>{event.preventDefault();saveJudgeSettings();});
+  $('judge-check').addEventListener('click',checkJudgeConnection);
+  $('judge-enable').addEventListener('click',()=>{setJudgeEnabled(true);updateControls();});
+  $('judge-disable').addEventListener('click',()=>{setJudgeEnabled(false);updateControls();});
+  $('judge-settings-form').addEventListener('input',()=>{judgeStatus();updateControls();});
+  $('judge-settings-dialog').addEventListener('close',()=>{judgeCheckController?.abort();$('judge-key').value='';});
   $('task-input').addEventListener('input',()=>{taskInputDirty=true;});
   $('task-form').addEventListener('submit',event=>{
     event.preventDefault();if(directoryPickerPending)return;
@@ -1029,6 +1125,7 @@
     if(reply.readyToExit)toast('任务已停止，记录已保存。');
   });});
   $('memory-refresh').addEventListener('click',()=>refreshMemory(true));
+  $('memory-clear').addEventListener('click',clearLongTermMemory);
   $('memory-settings-button').addEventListener('click',()=>{memorySettingsDirty=false;memoryRenderStatus();openDialog('memory-settings-dialog',$('memory-settings-button'));refreshMemory(true);});
   $('memory-settings-form').addEventListener('change',()=>{memorySettingsDirty=true;memoryControls();});
   $('memory-settings-form').addEventListener('submit',event=>{event.preventDefault();saveMemorySettings();});

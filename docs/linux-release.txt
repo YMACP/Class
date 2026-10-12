@@ -1,18 +1,20 @@
-Class 1.0.0 for Linux amd64 / arm64
+Class 1.1.0 for Linux amd64
 
-按设备架构下载对应的 Class-1.0.0-linux-amd64.tar.gz 或 Class-1.0.0-linux-arm64.tar.gz。
-本包为 glibc Linux 构建，已在 Ubuntu 24.04 AMD64 / ARM64 原生环境验收；Ubuntu 22.04 未在本轮验证，不适用于 Alpine/musl。
-2026-09-27（Asia/Shanghai），两种 Linux 架构各通过五套独立发布验收，使用隔离数据和本地模拟模型。
+本轮仅提供 amd64（x86-64），下载 Class 可执行文件；可选归档名为 Class-1.1.0-linux-amd64.tar.gz。
+本包为 glibc Linux 构建，不适用于 Alpine/musl。当前版本的运行验证以对应验收报告为准。
+2026-09-27（Asia/Shanghai），旧版 1.0.0 两种 Linux 架构各通过五套独立发布验收，使用隔离数据和本地模拟模型。
 报告：https://github.com/dsgymz/class_test/actions/runs/36258965980
-该结果不等于全部源码单元测试或真实模型质量测试通过。
+该旧版结果不代表 1.1.0 的验收结果，也不等于全部源码单元测试或真实模型质量测试通过。
 
-解压后运行：
+下载后赋予执行权限并运行；如果下载的是归档，先解压：
+  chmod +x Class
   ./Class
 应用会启动本机服务并打开默认浏览器；退出时点击界面的“退出服务”，或在终端按 Ctrl+C。
 无桌面自动打开需求时使用：
   ./Class --no-browser --data-dir /绝对路径/class-data
 服务仅监听本机回环地址；浏览器入口与登录信息保存在选定的数据目录，不要分享登录信息。
 无需安装 Node.js、Bun 或 npm。模型任务需要配置自己的模型接口与 API Key。
+Jev 判断器默认关闭，使用独立的服务与 API Key，不借用老师或学生密钥。配置密钥并启用后显示四个判断环节，按勾选直接应用；老师仍负责最终验收。
 
 完整桌面功能需要默认浏览器及 xdg-open，选择文件夹需要 zenity 或 kdialog。
 Agent 浏览器自动化支持已安装的 Chrome、Firefox，也保留 Chromium。

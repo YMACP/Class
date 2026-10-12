@@ -6,6 +6,7 @@ import { ToolManager } from './tools.js';
 import { RunJournal } from './run-journal.js';
 import {createStudent,createTeacher,createDemo,resolveModelApiKey,ModelClient} from './agents.js';
 import {MemoryManager,memoryProjectId,MEMORY_SUMMARY_PROMPT} from './memory-manager.js';
+import { JudgmentLayer } from './judgment-layer.js';
 
 const args=process.argv.slice(2);
 if(args.includes('--help')){console.log('node src/cli.js --demo [--output-dir <folder>]\nnode src/cli.js --config examples/config.json [--task "任务"] [--output-dir <folder>] [--no-memory]');process.exit(0);}
@@ -26,6 +27,9 @@ async function main(){
  }
  const task=option('--task')||config.task;if(typeof task!=='string'||!task.trim())throw Error('Task is required');
  const secrets=[config.provider,...(config.students||[]).map(s=>s.provider),config.teacher?.provider].filter(Boolean).map(p=>resolveModelApiKey({...config.provider,...p})).filter(Boolean);
+ const judgeKey=config.judge?.apiKey??process.env.CLASS_JEV_API_KEY??'';
+ if(judgeKey)secrets.push(judgeKey);
+ const judgment=new JudgmentLayer({...config.judge,apiKey:judgeKey,...(demo?{enabled:false}:{})},{knownSecrets:secrets,onDecision:record=>engine.record('judge.decision',record)});
  const base=path.resolve(option('--output-dir')||process.env.CLASS_RUNS_DIR||path.join(path.dirname(fileURLToPath(import.meta.url)),'..','runs'));fs.mkdirSync(base,{recursive:true});
  const runDir=fs.mkdtempSync(path.join(base,'Class-'));
  const runId=path.basename(runDir),cwd=tools?.cwd||process.cwd(),identities={teacher:config.teacher?.id||'teacher',students:(config.students||team?.students||[]).map(s=>({id:s.id,name:s.name||s.id}))};
@@ -39,7 +43,7 @@ async function main(){
  atomic(path.join(runDir,'session.json'),clean(meta,secrets)+'\n');memory?.registerRun(meta,runDir);
  if(!demo){
   const adapter=memory?.forRun({runId,projectId:meta.projectId,team:identities});tools.memory=adapter;teacherTools.memory=adapter;
-  const observer={onConversation:value=>memory?.captureConversation(runId,value)};
+  const observer={onConversation:value=>memory?.captureConversation(runId,value),judgment};
   team={students:config.students.map(s=>createStudent(s,config.provider,tools,observer)),teacher:createTeacher(config.teacher||{},config.provider,teacherTools,observer)};
  }
  const journal=new RunJournal({directory:runDir,secrets,runId,onRecord:record=>memory?.observeRecord(runId,record)});
@@ -55,11 +59,12 @@ async function main(){
  try{
   console.log('Class started ('+(demo?'deterministic demo':'live model')+'): '+task);
   let result=await engine.run(task);
+  if(judgment.config.enabled)result={...result,judgeStats:judgment.getStats()};
   try{await journal.flush();}catch(error){storageError=error;}
   if(storageError)result={...result,status:'failed',reason:'storage_error'};
   atomic(path.join(runDir,'result.json'),clean(result,secrets)+'\n');
   atomic(path.join(runDir,'blackboard.json'),clean(result.blackboard,secrets)+'\n');
-  Object.assign(meta,{status:result.status,finishedAt:new Date().toISOString()});atomic(path.join(runDir,'session.json'),clean(meta,secrets)+'\n');memory?.registerRun(meta,runDir);memory?.scan();
+  Object.assign(meta,{status:result.status,finishedAt:new Date().toISOString(),...(result.judgeStats?{judgeStats:result.judgeStats}:{})});atomic(path.join(runDir,'session.json'),clean(meta,secrets)+'\n');memory?.registerRun(meta,runDir);memory?.scan();
   console.log(clean({status:result.status,reason:result.reason,answer:result.answer,report:result.report,runDir},secrets));
   if(result.status!=='completed')process.exitCode=1;
   if(memory&&!demo&&!engine.stopRequested){await memory.scan();await memory.flush();taskRunning=false;memory._runJobs(runId);await memory.jobPromise;}

@@ -5,7 +5,7 @@
 <p align="center"><strong>一个课堂式Harness，模拟老师与学生之间的互动解题</strong></p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.0.0-007ec6?style=plastic" alt="version 1.0.0" height="24" />
+  <img src="https://img.shields.io/badge/version-1.1.0-007ec6?style=plastic" alt="version 1.1.0" height="24" />
   <img src="https://img.shields.io/badge/platform-Windows%20x64-999999?style=plastic" alt="platform Windows x64" height="24" />
   <img src="https://img.shields.io/badge/platform-Linux%20amd64-999999?style=plastic" alt="platform Linux amd64" height="24" />
 </p>

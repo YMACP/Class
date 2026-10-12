@@ -518,6 +518,23 @@ export async function createMemoryStore({ directory, secrets = [] } = {}) {
       if (!memoryAccess(row, ctx) || !ctx.admin && ctx.role !== 'teacher' && row.agent_id !== ctx.agentId) throw new Error('Memory is outside the allowed scope');
       return transaction(() => ({ deleted: true, id, deletedMemories: removeMemories([row.duplicate_of ?? id]) }));
     },
+    clearMemories(context) {
+      if (!contextOf(context).admin) throw new Error('Only an administrator can clear all long-term memories');
+      return transaction(() => {
+        const deletedCount = Number(get('SELECT count(*) AS n FROM memories').n), lastClearedAt = new Date().toISOString();
+        // Keep the same deletion protection as an individual deletion, including
+        // private, paused and invalid entries. Historical sources stay intact.
+        run("INSERT OR IGNORE INTO tombstones(type,id,project_id,deleted_at) SELECT 'memory',id,project_id,? FROM memories", [lastClearedAt]);
+        run("INSERT OR IGNORE INTO memory_content_tombstones(project_id,kind,agent_id,content_hash,deleted_at) SELECT project_id,kind,coalesce(agent_id,''),content_hash,? FROM memories", [lastClearedAt]);
+        run('DELETE FROM memories_fts'); run('DELETE FROM memories');
+        for (const session of all('SELECT id,metadata_json FROM sessions')) {
+          run('UPDATE sessions SET metadata_json=? WHERE id=?', [JSON.stringify({ ...parse(session.metadata_json, {}), memoryExtractedAt: lastClearedAt }), session.id]);
+        }
+        // Also covers old histories not indexed yet, e.g. while memory was off.
+        run("INSERT INTO memory_meta(key,value) VALUES('memories_cleared_at',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [lastClearedAt]);
+        return { ok: true, deletedCount, lastClearedAt };
+      });
+    },
     deleteSession(id, context) {
       required(id, 'session id');
       const ctx = contextOf(context), session = get('SELECT * FROM sessions WHERE id=?', [id]);
@@ -541,7 +558,7 @@ export async function createMemoryStore({ directory, secrets = [] } = {}) {
       const counts = {}; for (const table of ['sessions', 'records', 'memories', 'tombstones']) counts[table] = Number(get(`SELECT count(*) AS n FROM ${table}`).n);
       counts.contentTombstones = Number(get('SELECT count(*) AS n FROM memory_content_tombstones').n);
       const projects = all('SELECT DISTINCT project_id AS id FROM sessions UNION SELECT DISTINCT project_id AS id FROM memories ORDER BY id').map(row => row.id);
-      return { available: true, filename, schemaVersion: SCHEMA_VERSION, ...counts, projects };
+      return { available: true, filename, schemaVersion: SCHEMA_VERSION, ...counts, projects, lastClearedAt: get("SELECT value FROM memory_meta WHERE key='memories_cleared_at'")?.value ?? null };
     },
     migrateProject(oldId, newId) {
       required(oldId, 'old project id', 32768); required(newId, 'new project id', 32768);

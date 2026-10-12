@@ -7,14 +7,17 @@ import { ToolManager } from './tools.js';
 import { ModelClient, createStudent, createTeacher, createDemo } from './agents.js';
 import { normalizeModelEndpoint, normalizeReasoningEffort } from './model-protocol.js';
 import { normalizeContext1M } from './context-policy.js';
-import { createProfileStore, atomicJSON, DEFAULT_SETTINGS } from './profile-store.js';
+import { createProfileStore, atomicJSON, DEFAULT_SETTINGS, JUDGE_SECRET_ID, storedJudgeConfig } from './profile-store.js';
+import { normalizeJudgeConfig } from './judge-config.js';
+import { JevJudge } from './jev-judge.js';
+import { JudgmentLayer } from './judgment-layer.js';
 import { pickDirectory } from './directory-picker.js';
 import { relocateProfileDirectory, readMigrationRecovery } from './data-location.js';
 import { RunJournal } from './run-journal.js';
 import { assertStorageSpace, storageError, storageDetails } from './storage-health.js';
 import { MemoryManager, memoryProjectId, MEMORY_SUMMARY_PROMPT } from './memory-manager.js';
 
-const VERSION='1.0.0';
+const VERSION='1.1.0';
 const RUN_ID=/^run-[0-9a-f-]{36}$/;
 const AGENT_ID=/^[A-Za-z0-9_-]{1,80}$/;
 const BODY_LIMIT=65536,EVENT_LIMIT=1000,HISTORY_LIMIT=50,OUTCOME_LIMIT=500;
@@ -320,9 +323,23 @@ export async function createClassServer({dataDir,token,assets={},onShutdown,port
   }
   try{await pruneHistory();}catch(error){if(!error.fatalStorage&&!['ENOSPC','EDQUOT','EACCES','EPERM','EIO','EROFS','STORAGE_ERROR'].includes(error.code))throw error;rememberStorageFailure(error,{operation:'prune_history',path:historyDir});}
   const publicAgent=a=>({...a,hasKey:Boolean(store.secrets[a.id])});
-  const snapshot=()=>({agents:store.config.agents.map(publicAgent),settings:{...store.config.settings},run:current?safe(current):null,history:[...records.values()].sort((a,b)=>b.startedAt.localeCompare(a.startedAt)).map(summary),dataDir,relocating,storageWarnings:safe(storageWarnings),...(migrationWarning?{migrationWarning}:{}),...(recoveryLauncher?{recoveryLauncher}:{}),version:VERSION});
+  const publicJudge=()=>({...store.config.judge,hasApiKey:Boolean(store.secrets[JUDGE_SECRET_ID])});
+  const snapshot=()=>({agents:store.config.agents.map(publicAgent),settings:{...store.config.settings},judge:publicJudge(),run:current?safe(current):null,history:[...records.values()].sort((a,b)=>b.startedAt.localeCompare(a.startedAt)).map(summary),dataDir,relocating,storageWarnings:safe(storageWarnings),...(migrationWarning?{migrationWarning}:{}),...(recoveryLauncher?{recoveryLauncher}:{}),version:VERSION});
   const idle=()=>{if(relocating)fail(409,'Data directory migration is in progress');if(closing)fail(503,'Application is shutting down');if(chooser)fail(409,'Finish or cancel directory selection before continuing');if(active||starting)fail(409,'Stop the current task before changing configuration or starting another task');};
   const provider=(a,{forCheck=false}={})=>({baseUrl:a.baseUrl,protocol:a.protocol,model:a.model,...(a.reasoningEffort===undefined?{}:{reasoningEffort:a.reasoningEffort}),context1M:!forCheck&&a.context1M===true,jsonMode:a.jsonMode,timeoutMs:store.config.settings.modelTimeoutMs,apiKey:store.secrets[a.id]||''});
+  function judgeDraft(body) {
+    const allowed=new Set(['enabled','mode','protocol','baseUrl','model','apiKey','clearKey','features','timeoutMs','maxConcurrency','minOutputChars']);
+    if(Object.keys(body).some(key=>!allowed.has(key)))fail(400,'未知 Jev 设置');
+    if(body.clearKey!==undefined&&typeof body.clearKey!=='boolean')fail(400,'清除密钥选项必须为布尔值');
+    if(body.apiKey!==undefined&&(typeof body.apiKey!=='string'||body.apiKey.length>4096))fail(400,'Jev 密钥格式无效');
+    if(body.features!==undefined&&!object(body.features))fail(400,'Jev 判断范围格式无效');
+    const {clearKey,apiKey:given,...changes}=body;
+    const apiKey=clearKey?'':given?.trim()||store.secrets[JUDGE_SECRET_ID]||'';
+    let config;
+    try{config=normalizeJudgeConfig({...store.config.judge,...changes,features:{...store.config.judge.features,...changes.features},apiKey});}
+    catch(error){fail(400,error.message);}
+    return config;
+  }
   function requestStop(reason='user_stopped') {
     if(!active)return current;active.stopRequested=true;active.run.status='stopping';active.engine.stop(reason);return active.run;
   }
@@ -353,7 +370,13 @@ export async function createClassServer({dataDir,token,assets={},onShutdown,port
     const runId=`run-${randomUUID()}`,projectId=memoryProjectId(settings.cwd);
     const identities=demo?{teacher:'demo-teacher',students:[]}:{teacher:store.config.agents.find(a=>a.role==='teacher')?.id,students:store.config.agents.filter(a=>a.role==='student').map(a=>({id:a.id,name:a.name}))};
     const memoryAdapter=memory.settings.enabled?memory.forRun({runId,projectId,team:identities}):undefined;
-    const observer={onConversation:value=>memory.captureConversation(runId,value)};
+    // Freeze one independent helper for this run; a demonstration never calls it.
+    const judgment=new JudgmentLayer({...store.config.judge,...(demo?{enabled:false}:{}),apiKey:demo?'':store.secrets[JUDGE_SECRET_ID]||''},{
+      knownSecrets:Object.values(store.secrets),
+      onDecision:record=>engine.record('judge.decision',record),
+      onUpdate:stats=>{run.judgeStats=stats;}
+    });
+    const observer={onConversation:value=>memory.captureConversation(runId,value),judgment};
     let team,tools,teacherTools;
     if(demo)team=createDemo();else{
       const teachers=store.config.agents.filter(a=>a.role==='teacher'),students=store.config.agents.filter(a=>a.role==='student');
@@ -368,6 +391,7 @@ export async function createClassServer({dataDir,token,assets={},onShutdown,port
     const engine=new ClassEngine({...settings,...team,tools,teacherTools,journal,...(demo?{discoveryWindowMs:150,taskTimeoutMs:10000}:{} )});
     const run={id:runId,status:'running',phase:'solving',reviewRound:0,feedbackVersion:0,task,demo,startedAt:new Date().toISOString(),finishedAt:null,events:[],blackboard:[],outcomes:[],outcomesDropped:0,outcomesVersion:1,memberFailures:[],result:null,error:null,errorCode:null,eventsDropped:0,blackboardDropped:0,hasJournal:true,team:demo?{teacher:'demo-teacher',students:team.students.map(s=>({id:s.id,name:s.id}))}:{teacher:store.config.agents.find(a=>a.role==='teacher').id,students:store.config.agents.filter(a=>a.role==='student').map(a=>({id:a.id,name:a.name}))}};
     run.activitySummary={commandStarted:0,commandSucceeded:0,commandFailed:0,commandCancelled:0,formatRejected:0,formatCorrected:0,formatNormalized:0,publicProgress:0,submittedAnswers:0};
+    run.judgeStats=judgment.getStats();
     run.cwd=settings.cwd;run.projectId=projectId;memory.registerRun(run);
     try{
       await journal.append({kind:'run',task,demo,cwd:settings.cwd,projectId,startedAt:run.startedAt,team:run.team});
@@ -381,7 +405,7 @@ export async function createClassServer({dataDir,token,assets={},onShutdown,port
       throw failure;
     }
     records.set(run.id,run);current=run;
-    const execution={run,engine,tools,teacherTools,journal,stopRequested:false,storageError:null,promise:null,write:Promise.resolve(),timer:null,spaceTimer:null,spaceCheck:null};active=execution;
+    const execution={run,engine,tools,teacherTools,journal,judgment,stopRequested:false,storageError:null,promise:null,write:Promise.resolve(),timer:null,spaceTimer:null,spaceCheck:null};active=execution;
     function stopForStorage(error,operation,failurePath) {
       execution.storageError=rememberStorageFailure(error,{run,operation,path:failurePath});run.errorCode='storage_error';run.error=failureMessage('storage_error');
       engine.fail(execution.storageError);
@@ -393,6 +417,7 @@ export async function createClassServer({dataDir,token,assets={},onShutdown,port
     },5000);
     execution.spaceTimer.unref?.();
     engine.on('event',event=>{
+      run.judgeStats=judgment.getStats();
       appendSummary(run,'events',event,'eventsDropped');
       const counters=run.activitySummary;
       if(event.type==='tool.spawned')counters.commandStarted++;
@@ -424,6 +449,7 @@ export async function createClassServer({dataDir,token,assets={},onShutdown,port
       clearTimeout(execution.timer);execution.timer=null;await execution.write;
       try{await journal.flush();}catch(error){execution.storageError=rememberStorageFailure(error,{run,operation:'flush_journal',path:journal.filename});}
       if(execution.storageError)result={...result,status:'failed',reason:'storage_error'};
+      run.judgeStats=judgment.getStats();
       const finalRun={...run,status:execution.storageError||result.status==='failed'?'failed':execution.stopRequested||result.status==='stopped'?'stopped':result.status==='completed'?'completed':'failed',finishedAt:new Date().toISOString(),result:safe({...result,events:undefined,blackboard:undefined,outcomes:undefined})};
       if(finalRun.status==='failed'){finalRun.errorCode=/\bstorage_error\b/i.test(result.reason||'')?'storage_error':['TOOL_ARGUMENT_REPAIR_EXHAUSTED','TOOL_CALL_PROTOCOL_INVALID'].includes(result.errorCode)?result.errorCode:safe(result.reason||'task_failed');finalRun.error=safe(failureMessage(finalRun.errorCode==='storage_error'?'storage_error':result.reason||finalRun.errorCode));}
       else {finalRun.error=null;finalRun.errorCode=null;}
@@ -464,6 +490,9 @@ export async function createClassServer({dataDir,token,assets={},onShutdown,port
           if(query.projectId==='*')delete query.projectId;
           const endpoint=url.pathname.slice('/api/memory/'.length);
           if(endpoint==='status'&&req.method==='GET'){send(res,200,await memory.status());return;}
+          if(endpoint==='entries'&&req.method==='DELETE'){
+            req.resume();const result=await serial(async()=>{idle();return memory.clearMemories();});send(res,200,result);return;
+          }
           if(endpoint==='settings'&&req.method==='PUT'){send(res,200,await serial(()=>readBody(req).then(body=>memory.configure(body))));return;}
           const sessionRoute=/^sessions\/([^/]+)$/.exec(endpoint),entryRoute=/^entries\/([^/]+)$/.exec(endpoint);
           if(sessionRoute&&req.method==='DELETE'){
@@ -489,6 +518,35 @@ export async function createClassServer({dataDir,token,assets={},onShutdown,port
           fail(404,'Memory endpoint not found');
         }
         if(relocating&&req.method!=='GET')fail(409,'Data directory migration is in progress');
+        if(url.pathname==='/api/judge'&&req.method==='GET'){send(res,200,{judge:publicJudge()});return;}
+        if(url.pathname==='/api/judge'&&req.method==='PUT'){
+          const body=await readBody(req);
+          const judge=await serial(async()=>{
+            idle();const config=judgeDraft(body),secrets={...store.secrets};
+            if(!config.apiKey)fail(400,'尚未配置Jev密钥');
+            secrets[JUDGE_SECRET_ID]=config.apiKey;knownSecrets.add(config.apiKey);
+            await store.save({...store.config,judge:storedJudgeConfig(config)},secrets);
+            return publicJudge();
+          });
+          send(res,200,{judge});return;
+        }
+        if(url.pathname==='/api/judge/check'&&req.method==='POST'){
+          const body=await readBody(req);idle();const config=judgeDraft(body);
+          if(!config.apiKey)fail(400,'请填写 Jev 密钥后测试连接');
+          knownSecrets.add(config.apiKey);
+          const controller=new AbortController();checks.add(controller);
+          const disconnected=()=>controller.abort(new Error('Connection check cancelled'));res.once('close',disconnected);
+          try{
+            // This standalone check only classifies fixed sample text. No
+            // JudgmentLayer, task, tool execution or persistent setting is used.
+            const judge=new JevJudge({...config,enabled:true,features:{...config.features,toolResults:true}},{knownSecrets});
+            const result=await judge.decide('toolResults',{state:{text:'1 + 1 = 2'},questions:{ready:{type:'boolean',instructions:'Does the text state that one plus one equals two?'}}},{signal:controller.signal});
+            const ok=['ok','unclear'].includes(result.status);
+            const messages={timeout:'Jev 请求超时',aborted:'连接测试已取消',rate_limited:'Jev 接口限流，请稍后重试',auth:'Jev 密钥无效或无权使用该模型',invalid:'Jev 接口返回格式不匹配',error:'无法连接 Jev，请检查地址、模型和网络'};
+            if(!res.destroyed)send(res,200,{ok,status:result.status,message:ok?'Jev 连接成功；测试未保存设置':messages[result.status]||'Jev 连接测试未完成'});
+          }finally{checks.delete(controller);res.off('close',disconnected);}
+          return;
+        }
         if(url.pathname==='/api/data-directory/load'&&req.method==='POST'){
           const body=await readBody(req);
           if(Object.keys(body).some(key=>key!=='path'))fail(400,'Unknown data directory option');
