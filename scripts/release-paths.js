@@ -8,11 +8,13 @@ export const sourceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.ur
 
 // Release binaries must stay outside the source tree, including through a junction.
 export function getReleaseDirectory(architecture = windowsArchitecture()) {
-  return outsideSourceDirectory(process.env.CLASS_RELEASE_DIR || path.join(sourceRoot, '..', 'class-releases', `windows-${windowsArchitecture(architecture)}`));
+  const target = windowsArchitecture(architecture);
+  return outsideSourceDirectory(process.env.CLASS_RELEASE_DIR || path.join(sourceRoot, '..', 'class-releases', `windows-${target}`));
 }
 
 export function getLinuxReleaseDirectory(architecture = linuxArchitecture()) {
-  return outsideSourceDirectory(process.env.CLASS_RELEASE_DIR || path.join(sourceRoot, '..', 'class-releases', `linux-${linuxArchitecture(architecture)}`));
+  const target = linuxArchitecture(architecture);
+  return outsideSourceDirectory(process.env.CLASS_RELEASE_DIR || path.join(sourceRoot, '..', 'class-releases', `linux-${target}`));
 }
 
 export function outsideSourceDirectory(directory) {

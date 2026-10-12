@@ -1,7 +1,6 @@
 export function linuxArchitecture(value = process.env.CLASS_LINUX_ARCH || process.arch) {
   if (value === 'amd64' || value === 'x64') return 'amd64';
-  if (value === 'arm64' || value === 'aarch64') return 'arm64';
-  throw new Error('The Linux architecture must be amd64 (x64) or arm64.');
+  throw new Error('The Linux architecture must be amd64 (x64).');
 }
 
 export function linuxBuildOptions(args = process.argv.slice(2), { allowOutput = false } = {}) {
@@ -21,7 +20,7 @@ export function assertLinuxExecutable(bytes, architecture = linuxArchitecture())
   architecture = linuxArchitecture(architecture);
   if (bytes.length < 64 || !bytes.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46])) ||
       bytes[4] !== 2 || bytes[5] !== 1 || bytes[6] !== 1 || ![0, 3].includes(bytes[7]) ||
-      ![2, 3].includes(bytes.readUInt16LE(16)) || bytes.readUInt16LE(18) !== (architecture === 'amd64' ? 62 : 183) ||
+      ![2, 3].includes(bytes.readUInt16LE(16)) || bytes.readUInt16LE(18) !== 62 ||
       bytes.readUInt32LE(20) !== 1 || bytes.readUInt16LE(52) !== 64) {
     throw new Error(`Expected a little-endian Linux ${architecture} ELF64 executable`);
   }
@@ -44,7 +43,7 @@ export function assertLinuxExecutable(bytes, architecture = linuxArchitecture())
       interpreter = segment.subarray(0, -1).toString('utf8');
     }
   }
-  const expected = architecture === 'amd64' ? '/lib64/ld-linux-x86-64.so.2' : '/lib/ld-linux-aarch64.so.1';
+  const expected = '/lib64/ld-linux-x86-64.so.2';
   if (!loadable || interpreter !== expected) throw new Error(`Expected the Linux glibc loader ${expected}`);
   return { architecture, machine: bytes.readUInt16LE(18), format: 'ELF64', interpreter };
 }

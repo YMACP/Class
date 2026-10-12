@@ -2,7 +2,7 @@
 
 [返回首页](../README.md) · [模型配置](cli.md) · [工具能力](tools.md) · [记忆管理](memory.md)
 
-本页介绍 Class 1.1.0 Windows x64 程序；Linux 另见 [Linux 使用指南](linux.md)。本轮不提供 ARM64 或 macOS 发布程序。程序使用现代浏览器显示界面；浏览器自动化工具支持已安装的 Edge、Chrome 或 Firefox，目录选择组件使用系统 .NET Framework 4.x。旧版 ARM64 的构建和验收资料保留在 [ARM64 说明](windows-arm64.md)，不代表本轮构建结果。
+本页介绍 Class 1.1.0 Windows x64 程序；Linux 另见 [Linux 使用指南](linux.md)。Class 支持 Windows x64 和 Linux amd64。程序使用现代浏览器显示界面；浏览器自动化工具支持已安装的 Edge、Chrome 或 Firefox，目录选择组件使用系统 .NET Framework 4.x。
 
 浏览器工具默认优先查找 Edge/Chrome，未找到时查找 Firefox；特殊安装位置可通过 `CLASS_BROWSER_EXECUTABLE` 指定完整绝对路径。Firefox 需要 149 或更新版本，以保持下载禁用。Class 不内置或自动下载浏览器；本次适配不增加运行时依赖。缺少可用浏览器时会在调用 `browser` 工具时明确报错，不阻止其他任务。Agent 使用独立浏览器实例，不接管用于显示 Class 界面的日常浏览器；各浏览器共用原有暂停、恢复、取消和清理机制。
 

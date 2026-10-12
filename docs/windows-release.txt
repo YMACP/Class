@@ -9,12 +9,8 @@ Class 会在首次运行时建立用户自己的数据目录；此发布包不�
 移动程序文件不等于移动数据。已有用户请继续使用原先选择的数据目录。
 
 本包面向 Windows x64，目录选择器使用系统 .NET Framework 4.x。
-本轮仅提供 Windows x64 和 Linux amd64，不提供 ARM64 或 macOS 构建。
+Class 支持 Windows x64 和 Linux amd64。
 本包下载校验清单为 SHA256SUMS-windows-x64.txt，另保留 SHA256SUMS.txt。
 
 Jev 判断器默认关闭。启用需要独立配置支持的服务与 API Key，不使用老师或学生的密钥。
 配置密钥并启用后显示四个判断环节，按勾选直接应用；老师仍负责最终验收。关闭即可回到原有判断流程。
-
-2026-09-27（Asia/Shanghai）的旧版 1.0.0 三平台原生发布验收记录：
-https://github.com/dsgymz/class_test/actions/runs/36258965980
-该次运行覆盖 Windows ARM64 和 Linux 两种架构，不包含 Windows x64 云端验收，也不代表 1.1.0 的验收结果。

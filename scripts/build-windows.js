@@ -11,11 +11,11 @@ import { windowsArchitecture, windowsBuildArchitecture, assertWindowsExecutable 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 if (process.platform !== 'win32') throw new Error('Build the Windows releases on Windows.');
 const architecture = windowsBuildArchitecture();
-const hostArchitecture = windowsArchitecture(process.arch);
+windowsArchitecture(process.arch);
 const releaseDirectory = getReleaseDirectory(architecture);
 const output = path.join(releaseDirectory, 'Class.exe');
 if (fs.existsSync(output)) assertWindowsExecutable(fs.readFileSync(output), architecture);
-const localBun = path.join(root, 'node_modules', '@oven', hostArchitecture === 'arm64' ? 'bun-windows-aarch64' : 'bun-windows-x64-baseline', 'bin', 'bun.exe');
+const localBun = path.join(root, 'node_modules', '@oven', 'bun-windows-x64-baseline', 'bin', 'bun.exe');
 const bun = process.env.BUN_EXECUTABLE || process.env.BUN_EXE || (process.versions.bun ? process.execPath : fs.existsSync(localBun) ? localBun : 'bun');
 const packageInfo = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 const check = spawnSync(bun, ['--version'], { cwd: root, encoding: 'utf8', windowsHide: true });
@@ -51,7 +51,7 @@ try {
     const targetPe = targetRuntime.length >= 64 ? targetRuntime.readUInt32LE(0x3c) : 0;
     if (targetRuntime.toString('ascii', 0, 2) !== 'MZ' || targetPe < 64 || targetPe + 26 > targetRuntime.length ||
         targetRuntime.toString('ascii', targetPe, targetPe + 4) !== 'PE\0\0' ||
-        targetRuntime.readUInt16LE(targetPe + 4) !== (architecture === 'arm64' ? 0xaa64 : 0x8664) ||
+        targetRuntime.readUInt16LE(targetPe + 4) !== 0x8664 ||
         targetRuntime.readUInt16LE(targetPe + 24) !== 0x20b) throw new Error('The supplied Bun compile runtime has the wrong Windows architecture.');
     const stagedRuntime = path.join(compileDirectory, 'target-bun.exe');
     fs.writeFileSync(stagedRuntime, targetRuntime);
@@ -59,7 +59,7 @@ try {
   }
   const result = spawnSync(compiler, [
     'build', path.join(root, 'src', 'desktop.js'),
-    '--compile', `--target=${architecture === 'arm64' ? 'bun-windows-arm64' : 'bun-windows-x64-baseline'}`, '--outfile', compiledOutput,
+    '--compile', '--target=bun-windows-x64-baseline', '--outfile', compiledOutput,
     '--no-compile-autoload-dotenv', '--no-compile-autoload-bunfig',
     '--windows-hide-console',
     '--windows-title=Class', `--windows-version=${packageInfo.version}.0`,
@@ -80,7 +80,7 @@ try {
 const executable = fs.readFileSync(stagedOutput);
 if (executable.toString('ascii', 0, 2) !== 'MZ') throw new Error('Compiled output is not a Windows executable');
 const peOffset = executable.readUInt32LE(0x3c);
-if (peOffset < 64 || peOffset + 94 > executable.length || executable.toString('ascii', peOffset, peOffset + 4) !== 'PE\0\0' || executable.readUInt16LE(peOffset + 4) !== (architecture === 'arm64' ? 0xaa64 : 0x8664) || executable.readUInt16LE(peOffset + 24) !== 0x20b) throw new Error(`Expected a Windows ${architecture} PE executable`);
+if (peOffset < 64 || peOffset + 94 > executable.length || executable.toString('ascii', peOffset, peOffset + 4) !== 'PE\0\0' || executable.readUInt16LE(peOffset + 4) !== 0x8664 || executable.readUInt16LE(peOffset + 24) !== 0x20b) throw new Error(`Expected a Windows ${architecture} PE executable`);
 executable.writeUInt16LE(2, peOffset + 24 + 68); // IMAGE_SUBSYSTEM_WINDOWS_GUI
 executable.writeUInt32LE(0, peOffset + 24 + 64); // Optional checksum; avoid a stale value after the header update.
 assertWindowsExecutable(executable, architecture);
@@ -89,5 +89,5 @@ const notices = ['README.md', 'Bun-LICENSE.txt', 'unpdf-MIT.txt', 'PDFjs-Apache-
   .map(name => fs.readFileSync(path.join(root, 'licenses', name), 'utf8')).join('\n\n');
 fs.renameSync(stagedOutput, output);
 fs.writeFileSync(path.join(releaseDirectory, 'THIRD_PARTY_NOTICES.txt'), notices);
-fs.copyFileSync(path.join(root, 'docs', architecture === 'arm64' ? 'windows-arm64-release.txt' : 'windows-release.txt'), path.join(releaseDirectory, 'README.txt'));
+fs.copyFileSync(path.join(root, 'docs', 'windows-release.txt'), path.join(releaseDirectory, 'README.txt'));
 console.log(`Ready: ${output} (${(fs.statSync(output).size / 1048576).toFixed(1)} MiB)`);

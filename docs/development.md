@@ -1,16 +1,18 @@
 # Windows 与 Linux 开发及发布
 
-[返回首页](../README.md) · [命令行](cli.md) · [架构入口](architecture.md)
+[返回首页](../README.md) · [命令行](cli.md) · [架构入口](architecture.md) · [Jev 判断器](jev.md)
 
 以下命令均在源码根目录运行。源码目录保持为 `class`；构建脚本通过自身位置定位源码，不依赖当前终端目录。
 
 ## 版本约定
 
-Class 首次发布版本统一为 `1.0.0`。后续修改与重新打包均保持此版本，只有维护者明确要求时才更改版本号。源码包版本、服务版本、发布文件名和验收预期必须一致；Windows 文件属性采用四段格式 `1.0.0.0`。第三方依赖版本与数据格式版本独立维护。
+Class 首次发布版本为 `1.0.0`；经维护者授权，Jev 集成版本更新为 `1.1.0`。本轮后续修改与重新打包保持 `1.1.0`，只有维护者明确要求时才更改版本号。源码包版本、服务版本、发布文件名和验收预期必须一致；Windows 文件属性采用四段格式 `1.1.0.0`。第三方依赖版本与数据格式版本独立维护，历史验收记录保留当时版本。
+
+当前发布目标仅为 Windows x64 和 Linux amd64。源码中保留的 ARM64 构建能力及旧文档不表示本轮制作、发布或验收了 ARM64 产物。Jev 默认关闭，不改变现有课堂流程；配置、按项启用与回退方式见 [Jev 判断器](jev.md)。
 
 ## 开发环境
 
-开发环境需要与设备架构一致的 Node.js 24+，先运行 `npm ci` 安装锁定依赖。PDF 文本提取使用 unpdf / PDF.js；Bun `1.4.2` 的 Windows x64 / ARM64 和 Linux amd64 / arm64 包列在 `optionalDependencies`，npm 按宿主系统及架构安装对应包。
+开发环境需要与设备架构一致的 Node.js 24+，先运行 `npm ci --ignore-scripts` 安装锁定依赖。PDF 文本提取使用 unpdf / PDF.js；Bun `1.4.2` 的 Windows x64 / ARM64 和 Linux amd64 / arm64 包列在 `optionalDependencies`，npm 按宿主系统及架构安装对应包。
 
 下文 Windows 编译器及 ZIP 说明适用于 Windows。Linux 不依赖 .NET/Roslyn，使用 `npm run package:linux:amd64` 或 `npm run package:linux:arm64` 生成源码树外的 `Class` 程序与 `.tar.gz`。Linux 系统依赖、凭据保存和独立验收器见 [Linux 指南](linux.md)。
 
@@ -21,7 +23,7 @@ Class 首次发布版本统一为 `1.0.0`。后续修改与重新打包均保持
 浏览器兼容性验证使用已安装的浏览器：Windows 为 Edge、Chrome、Firefox，Linux 为 Chrome、Firefox；普通使用还保留 Chromium。Firefox 需要 149 或更新版本，以维持下载禁用。适配直接使用浏览器协议，不增加运行时依赖，不内置或自动下载浏览器；各浏览器共用独立配置和既有暂停、恢复、取消及清理机制。
 
 ```powershell
-npm ci
+npm ci --ignore-scripts
 
 # 自动生成原生目录选择组件与界面资源，并打开本地 Web UI
 npm start
@@ -31,9 +33,7 @@ npm run build:windows
 
 # 明确指定目标架构；package 命令自动构建并打包
 npm run build:windows:x64
-npm run build:windows:arm64
 npm run package:windows:x64
-npm run package:windows:arm64
 ```
 
 `npm start`、`npm test` 和需要源码资源的发布验证会自动执行资源准备；打包也会生成 `build/generated/` 内的原生目录选择组件与嵌入资源。应修改 `src/`、`public/` 或 `native/` 中的源文件，不手工维护生成资源。
@@ -71,17 +71,16 @@ class/
 │  └─ build/generated/                 # 自动生成的构建资源
 └─ class-releases/
    ├─ windows-x64/Class.exe            # Windows x64 发布程序
-   ├─ windows-arm64/Class.exe          # Windows ARM64 发布程序
-   ├─ Class-1.0.0-windows-x64.zip
-   ├─ Class-1.0.0-windows-arm64.zip
-   ├─ SHA256SUMS-windows-x64.txt
-   ├─ SHA256SUMS-windows-arm64.txt
-   └─ SHA256SUMS.txt                   # x64 校验清单的兼容入口
+   └─ linux-amd64/Class                # Linux amd64 发布程序
 ```
 
 运行 `npm run package:windows` 会自动构建再打包。ZIP 包含 `Class.exe`、`THIRD_PARTY_NOTICES.txt` 和对应架构的 `README.txt`；第三方许可来源见 [licenses/README.md](../licenses/README.md)。默认 EXE 路径为 `../class-releases/windows-<架构>/Class.exe`，ZIP 与对应的校验清单位于输出目录的上级；正式用户数据仍位于用户选择的数据目录。
 
+可选归档名称包含当前版本，例如 `Class-1.1.0-windows-x64.zip`、`Class-1.1.0-linux-amd64.tar.gz`。归档和校验清单是发布辅助文件，不是启动程序的依赖。
+
 可通过 `CLASS_RELEASE_DIR` 环境变量指定其他发布输出目录，例如 `D:\Class\releases\windows-x64`。构建脚本要求产物位于源码树之外；该变量只改变发布产物位置，不改变用户数据目录。
+
+更新发布程序时先将 `CLASS_RELEASE_DIR` 指向独立暂存目录，完成对应平台验收后再替换正式文件。版本号或文件头检查只能证明元数据与目标架构，不能代替运行验收。不要使用真实数据目录运行测试，也不要把配置、密钥、会话或记忆打入程序。
 
 使用 `Class.exe --data-dir <绝对路径>` 或 `./Class --data-dir <绝对路径>` 指定隔离数据时，目标目录不存在会进入数据目录恢复页面。首次直接使用新目录前应先创建空目录，Linux 需由当前用户持有且权限为 `0700`；未显式指定目录的正常首次启动仍会自动初始化。恢复选项和“迁移到空目录”“加载已有目录”的区别见 [数据目录恢复](../README.md#数据目录恢复)。
 

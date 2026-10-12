@@ -32,5 +32,5 @@ const hashes = [path.join(directory, 'Class.exe'), archive].map(file =>
   `${createHash('sha256').update(fs.readFileSync(file)).digest('hex')}  ${path.relative(path.dirname(directory), file).split(path.sep).join('/')}`).join('\n') + '\n';
 fs.writeFileSync(path.join(path.dirname(directory), `SHA256SUMS-windows-${architecture}.txt`), hashes);
 // Keep the original x64 checksum entrypoint for existing release scripts.
-if (architecture === 'x64') fs.writeFileSync(path.join(path.dirname(directory), 'SHA256SUMS.txt'), hashes);
+fs.writeFileSync(path.join(path.dirname(directory), 'SHA256SUMS.txt'), hashes);
 console.log(`Packaged: ${archive}`);

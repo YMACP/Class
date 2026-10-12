@@ -14,10 +14,9 @@ in the executables and are not modified by Class.
 - PDF.js: https://github.com/mozilla/pdf.js — see `PDFjs-Apache-2.0.txt`.
 
 The Windows build writes these notices beside `Class.exe`, by default at
-`../class-releases/windows-<architecture>/THIRD_PARTY_NOTICES.txt` outside the source tree
-(`x64` or `arm64`).
+`../class-releases/windows-x64/THIRD_PARTY_NOTICES.txt` outside the source tree.
 Keep that file with the Windows distribution.
 
 The Linux build writes the same notices to
-`../class-releases/linux-<architecture>/THIRD_PARTY_NOTICES.txt`
-(`amd64` or `arm64`). Keep that file with the Linux distribution too.
+`../class-releases/linux-amd64/THIRD_PARTY_NOTICES.txt`.
+Keep that file with the Linux distribution too.

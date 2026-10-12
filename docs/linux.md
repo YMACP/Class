@@ -1,8 +1,8 @@
 # Linux 构建与运行
 
-[返回首页](../README.md) · [开发与发布](development.md)
+[返回首页](../README.md) · [命令行配置](cli.md) · [Windows 使用指南](windows.md)
 
-Class 1.1.0 本轮提供 Linux amd64（x86-64）程序，不制作 ARM64 产物。界面、成员调度、持续评审、工具协议和记忆工作流与 Windows 使用同一套源码。平台适配包括数据路径、凭据保存、目录选择和程序启动。[Jev 判断器](jev.md) 默认关闭，使用独立配置和密钥，不改变老师的最终验收职责。
+Class 1.1.0 提供 Linux amd64（x86-64）程序。界面、成员调度、持续评审、工具协议和记忆工作流与 Windows 使用同一套源码。平台适配包括数据路径、凭据保存、目录选择和程序启动。[Jev 判断器](jev.md) 默认关闭，使用独立配置和密钥，不改变老师的最终验收职责。
 
 ## 下载与启动
 
@@ -52,27 +52,25 @@ Linux 使用本地随机密钥与 AES-256-GCM 保存 API Key。`credentials.key`
 
 ## 从源码构建
 
-Linux 开发环境安装对应架构的 Node.js 24+：
+Linux amd64 开发环境安装 x64 版 Node.js 24+：
 
 ```bash
 npm ci --ignore-scripts
 npm start
-# 构建与打包当前架构
+# 构建与打包 Linux amd64
 npm run package:linux
-# 或明确指定架构
+# 或使用等效命令
 npm run package:linux:amd64
 ```
 
 `npm ci` 按宿主系统及架构安装锁定的 Bun 1.4.2。`prepare:assets` 在 Linux 生成前端资源与不含 Windows 原生组件的占位模块，不需要 Roslyn/.NET。
 
-Windows x64 可交叉构建两个 Linux 目标。`BUN_EXECUTABLE` 指定宿主 Bun；`BUN_COMPILE_EXECUTABLE` 可指定官方、同版本且同目标架构的 Linux Bun 文件，构建会验证 ELF 架构与 glibc 加载器。Windows 构建进程的 `TEMP`/`TMP` 必须是可写的纯 ASCII 路径。
+Windows x64 可交叉构建 Linux amd64。`BUN_EXECUTABLE` 指定宿主 Bun；`BUN_COMPILE_EXECUTABLE` 可指定官方、同版本的 Linux x64 Bun 文件，构建会验证 ELF 架构与 glibc 加载器。Windows 构建进程的 `TEMP`/`TMP` 必须是可写的纯 ASCII 路径。
 
 本轮产物与源码分离：`../class-releases/linux-amd64/Class`。可选 `.tar.gz` 及 `SHA256SUMS-linux-amd64.txt` 位于 `../class-releases/`；发布前应使用源码树外的 `CLASS_RELEASE_DIR` 指向独立暂存目录，验证后再替换正式程序。打包仅包含程序、说明、许可证及清单，并显式设置 POSIX 执行权限。
 
 ## 验收状态
 
-构建、ELF 架构、压缩包权限和哈希检查属于静态验证。历史上，2026-09-27（Asia/Shanghai）的 1.0.0 在 Ubuntu 24.04 AMD64 / ARM64 分别完成五套独立发布验收，并与 Windows 11 ARM64 合计 15 套全部通过。旧版 Linux 验收实际运行了浏览器、图形目录选择窗口、凭据重启/迁移和任务暂停恢复；各套件正常退出并完成清理。报告和程序哈希见 [原生验收记录](native-acceptance.md)，不能将该记录视为 1.1.0 的验收结果。
+构建、ELF 架构、压缩包权限和哈希检查属于静态验证，不能代替目标系统上的实际运行。构建清单中的 `nativeRunVerified: false` 记录制包时的状态；原生运行结论以对应版本的独立验收报告为准。
 
-上述历史验收使用隔离数据和本地模拟模型，未执行三个平台的全部源码单元测试，也未验证真实模型服务的识别质量。构建清单中的 `nativeRunVerified: false` 记录制包时的状态；后续原生运行结论以独立验收报告为准。
-
-独立验收器可用 `build:verifier:linux:amd64` / `build:verifier:linux:arm64` 构建，默认输出到源码同级的 `class-verification/linux-<架构>/Class.Verify`。命令格式为 `./Class.Verify --suite all --exe /绝对路径/Class --report-dir /包目录之外的报告路径`，使用隔离测试数据和本地模拟模型；不读取真实用户数据。
+独立验收器可用 `build:verifier:linux:amd64` 构建，默认输出到源码同级的 `class-verification/linux-amd64/Class.Verify`。命令格式为 `./Class.Verify --suite all --exe /绝对路径/Class --report-dir /包目录之外的报告路径`，使用隔离测试数据和本地模拟模型；不读取真实用户数据，也不验证真实模型服务的识别质量。

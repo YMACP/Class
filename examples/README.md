@@ -14,4 +14,4 @@ npm ci
 npm run demo -- --output-dir D:\Class\verification\runs
 ```
 
-演示只验证固定成功路径，不代表真实供应商调用已通过。完整开发与发布验证见 [开发指南](../docs/development.md)。
+演示只验证固定成功路径，不代表真实供应商调用已通过。模型配置见 [命令行指南](../docs/cli.md)。
