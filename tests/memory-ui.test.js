@@ -7,19 +7,19 @@ const app = await fs.readFile(new URL('../public/app.js', import.meta.url), 'utf
 const html = await fs.readFile(new URL('../public/index.html', import.meta.url), 'utf8');
 const controller = app.slice(app.indexOf('  const memoryKinds ='), app.indexOf("  let agentsStamp='"));
 
-function harness(api = async () => ({ items: [], total: 0, nextOffset: null })) {
+function harness(api = async () => ({ items: [], total: 0, nextOffset: null }), confirm = () => true) {
   const elements = new Map(), notices = [], closedDialogs = [];
   const $ = id => {
-    if (!elements.has(id)) elements.set(id, { value: '', innerHTML: '', textContent: '', hidden: false, disabled: false, checked: false, options: [], classes: new Set(), classList: { toggle(name, value) { value ? elements.get(id).classes.add(name) : elements.get(id).classes.delete(name); } }, querySelectorAll: () => [], add(option) { this.options.push(option); } });
+    if (!elements.has(id)) elements.set(id, { value: '', innerHTML: '', textContent: '', hidden: false, disabled: false, checked: false, options: [], attributes: {}, setAttribute(name, value) { this.attributes[name] = value; }, classes: new Set(), classList: { toggle(name, value) { value ? elements.get(id).classes.add(name) : elements.get(id).classes.delete(name); } }, querySelectorAll: () => [], add(option) { this.options.push(option); } });
     return elements.get(id);
   };
-  const context = vm.createContext({ $, api, URLSearchParams, Date, console,
+  const context = vm.createContext({ $, api, confirm, URLSearchParams, Date, console,
     state: { agents: [], dataDir: 'isolated-fixture' }, token: 'fixture', shutdown: false, shuttingDown: false, lastConnection: true, page: 'memory',
     document: { querySelector: () => null }, toast(message, warning) { notices.push({ message, warning }); }, openDialog() {}, dialogSessions: new Map(), closeSavedDialog(id) { closedDialogs.push(id); }, person: () => null, formatDate: value => value || '—', statusNames: {},
     text: value => typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value),
     esc: value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]))
   });
-  vm.runInContext(controller + `\nglobalThis.controller = {memoryRecordMarkup,memoryEntryMarkup,memorySourceMarkup,loadMemoryEntries,loadMemoryContext,memoryDeletionNotice,showMemoryDeletionNotice,refreshMemory,memorySetEntryStatus,saveMemorySettings,memoryActivity,requestMemoryJob,openMemoryEntry,
+  vm.runInContext(controller + `\nglobalThis.controller = {memoryRecordMarkup,memoryEntryMarkup,memorySourceMarkup,loadMemoryEntries,loadMemoryContext,memoryDeletionNotice,showMemoryDeletionNotice,refreshMemory,memorySetEntryStatus,saveMemorySettings,memoryActivity,requestMemoryJob,openMemoryEntry,clearLongTermMemory,
     status(value){memoryStatus=value;}, requested(value){memoryRequestedJob=value;}, context(value){memoryContext=value;}, closeContext(){memoryContextRequest++;memoryContext=null;}, views:memoryViews};`, context);
   context.controller.status({ enabled: true, available: true });
   return { $, ui: context.controller, notices, closedDialogs };
@@ -115,6 +115,8 @@ test('memory landing page loads only long-term entries and settings without eage
   assert.ok(!main.includes('memory-sessions-'));
   assert.ok(!main.includes('memory-settings-form'));
   assert.ok(main.indexOf('id="memory-settings-button"') < main.indexOf('id="memory-refresh"'));
+  assert.ok(main.indexOf('id="memory-refresh"') < main.indexOf('id="memory-clear"'));
+  assert.match(main, /class="workspace-icon-button memory-clear-button" id="memory-clear"[^>]*aria-label="清空长期记忆"[^>]*><svg[^>]*><use href="#i-trash"/);
   assert.ok(html.includes('<dialog closedby="none" id="memory-settings-dialog"'));
   assert.ok(!html.includes('memory-auto-extract'));
   assert.ok(!html.includes('候选'));
@@ -124,6 +126,66 @@ test('memory landing page loads only long-term entries and settings without eage
   const settings = html.slice(html.indexOf('id="memory-settings-dialog"'), html.indexOf('id="memory-entry-dialog"'));
   assert.ok(settings.indexOf('id="memory-state"') < settings.indexOf('aria-label="关闭记忆设置"'));
   assert.ok(!settings.includes('<h3>'));
+});
+
+test('bulk clear requires confirmation and cancellation makes no request', async () => {
+  const calls = [], prompts = [];
+  const { ui, notices } = harness(async (...args) => { calls.push(args); }, message => { prompts.push(message); return false; });
+  await ui.clearLongTermMemory();
+  assert.equal(prompts.length, 1);
+  assert.match(prompts[0], /所有长期记忆/); assert.match(prompts[0], /原始会话记录会保留/); assert.match(prompts[0], /无法撤销/);
+  assert.deepEqual(calls, []); assert.deepEqual(notices, []);
+});
+
+test('bulk clear deletes without filters, blocks repeated clicks, resets pagination and refreshes count', async () => {
+  const calls = [], prompts = []; let release;
+  const { $, ui, notices } = harness(async (url, options) => {
+    calls.push({ url, method: options?.method || 'GET' });
+    if (options?.method === 'DELETE') return new Promise(resolve => { release = resolve; });
+    if (url === '/api/memory/status') return { enabled: true, available: true, memories: 0, sessions: 3, records: 8, jobs: [] };
+    return { items: [], total: 0, nextOffset: null };
+  }, message => { prompts.push(message); return true; });
+  $('memory-entry-query').value = '只显示部分'; $('memory-entry-kind').value = 'user'; $('memory-entry-status').value = 'paused';
+  ui.views.entries.offset = 20; ui.views.entries.total = 24;
+  const clearing = ui.clearLongTermMemory();
+  assert.equal($('memory-clear').disabled, true); assert.equal($('memory-clear').attributes['aria-busy'], 'true');
+  await ui.clearLongTermMemory(); assert.equal(prompts.length, 1); assert.equal(calls.length, 1);
+  release({ ok: true, deletedCount: 24 }); await clearing;
+  assert.deepEqual(calls.filter(call => call.method === 'DELETE'), [{ url: '/api/memory/entries', method: 'DELETE' }]);
+  assert.equal(ui.views.entries.offset, 0); assert.equal(ui.views.entries.total, 0);
+  assert.equal($('memory-clear').disabled, false); assert.equal($('memory-clear').attributes['aria-busy'], 'false');
+  assert.equal($('memory-entries-content').innerHTML, '<div class="memory-empty-message">暂无记录</div>');
+  assert.equal($('memory-entries-prev').disabled, true); assert.equal($('memory-entries-next').disabled, true);
+  assert.equal($('memory-summary').textContent, '3 个会话 · 8 条原始记录 · 0 条长期记忆');
+  assert.ok(notices.some(notice => notice.message.includes('所有长期记忆已清空') && !notice.warning));
+  assert.equal(calls.some(call => call.url.includes('/sessions') || call.url.includes('/jobs')), false);
+});
+
+test('failed bulk clear reports error and retains entries without a success message', async () => {
+  const { $, ui, notices } = harness(async (url, options) => {
+    if (options?.method === 'DELETE') throw new Error('任务运行中，请稍后清空');
+    if (url === '/api/memory/status') return { enabled: true, memories: 1, sessions: 3, records: 8, jobs: [] };
+    return { items: [{ id: 'keep', content: '保留的记忆', kind: 'user', status: 'active' }], total: 1 };
+  });
+  await ui.loadMemoryEntries(); await ui.clearLongTermMemory();
+  assert.ok($('memory-entries-content').innerHTML.includes('保留的记忆'));
+  assert.ok(notices.some(notice => notice.warning && notice.message === '任务运行中，请稍后清空'));
+  assert.equal(notices.some(notice => notice.message.includes('已清空')), false);
+  assert.equal($('memory-clear').disabled, false); assert.equal($('memory-clear').attributes['aria-busy'], 'false');
+});
+
+test('late list response from before bulk clear cannot resurrect deleted entries', async () => {
+  let stale;
+  const { $, ui } = harness(async (url, options) => {
+    if (options?.method === 'DELETE') return { ok: true, deletedCount: 1 };
+    if (url === '/api/memory/status') return { enabled: true, memories: 0, jobs: [] };
+    if (!stale) return new Promise(resolve => { stale = resolve; });
+    return { items: [], total: 0 };
+  });
+  const earlier = ui.loadMemoryEntries(); await ui.clearLongTermMemory();
+  stale({ items: [{ id: 'deleted', content: '不应再次出现' }], total: 1 }); await earlier;
+  assert.equal($('memory-entries-content').innerHTML, '<div class="memory-empty-message">暂无记录</div>');
+  assert.equal(ui.views.entries.total, 0);
 });
 
 test('entry lifecycle actions pause and enable through the new statuses and display pre-use evaluation carefully', async () => {

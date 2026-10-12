@@ -66,6 +66,7 @@ export class MemoryManager {
       } catch (error) { if (error.code !== 'ENOENT') throw error; }
       await atomicJSON(path.join(this.directory, 'settings.json'), { version: 2, ...this.settings });
       this.store = await createMemoryStore({ directory: this.directory, secrets: () => this.secrets });
+      this.lastClearedAt = this.store.status().lastClearedAt;
       await this._restoreProjects();
       for (const id of this.deletedSessions) await this.store.deleteSession(id, ADMIN);
       try {
@@ -222,7 +223,7 @@ export class MemoryManager {
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
   }
   scan() {
-    if (this.closed || this.closing || !this.settings.enabled || this.scanQueued) return this.queue;
+    if (this.closed || this.closing || this.clearingMemories || !this.settings.enabled || this.scanQueued) return this.queue;
     this.scanQueued = true;
     return this._enqueue(async () => {
       this.indexing = true;
@@ -250,7 +251,8 @@ export class MemoryManager {
           if (this.deletedSessions.has(run.meta.id)) continue;
           try {
           run.meta.projectId = this.projectId(run.meta.projectId);
-          const session = await this.store.registerSession({ ...run.meta, metadata: { ...run.meta.metadata, demo: run.meta.demo === true || run.meta.metadata?.demo === true, summaryOnly: run.meta.summaryOnly === true } });
+          const session = await this.store.registerSession({ ...run.meta, metadata: { ...run.meta.metadata, demo: run.meta.demo === true || run.meta.metadata?.demo === true, summaryOnly: run.meta.summaryOnly === true,
+            ...(this.lastClearedAt && !run.meta.startedAt && !run.meta.createdAt ? { memoryExtractedAt: this.lastClearedAt } : {}) } });
           for (const file of ['journal.jsonl', 'conversations.jsonl']) await this._scanFile(run, file);
           if (!run.meta.hasJournal && run.meta.summaryOnly) {
             await this.store.upsertRecords(run.meta.id, [{ id: `legacy:${run.meta.id}`, reference: `legacy:${run.meta.id}`, kind: 'legacy_summary', role: 'system', shared: false, timestamp: run.meta.startedAt,
@@ -297,8 +299,9 @@ export class MemoryManager {
   canPrune(id) { return !this.settings.enabled || this.archived.has(id); }
   finishRun(run) { this.registerRun(run); this.scan(); }
   async _queueExtraction(session) {
-    if (!session || !this.settings.enabled || this.closed || this.closing || this.deletedSessions.has(session.id) || !RUN.test(session.id)
+    if (!session || !this.settings.enabled || this.closed || this.closing || this.clearingMemories || this.deletedSessions.has(session.id) || !RUN.test(session.id)
       || !['completed', 'failed', 'stopped', 'interrupted'].includes(session.status) || session.metadata?.demo
+      || this.lastClearedAt && session.startedAt <= this.lastClearedAt
       || session.metadata?.memoryExtractedAt || this.jobs.some(job => job.type === 'extract' && job.sessionId === session.id)
       || this.jobs.filter(job => ['pending', 'running'].includes(job.status)).length >= 100) return;
     await this.queueJob({ type: 'extract', sessionId: session.id, automatic: true });
@@ -322,6 +325,10 @@ export class MemoryManager {
   }
   async queueJob(value) {
     await this.requireStore();
+    if (this.clearingMemories) {
+      if (value.automatic === true) return null;
+      throw Object.assign(new Error('正在清空长期记忆，请稍后重试'), { status: 409 });
+    }
     if (value.type === 'reflect') value = { ...value, projectId: undefined };
     else if (value.projectId) value = { ...value, projectId: this.projectId(value.projectId) };
     if (!['extract', 'reflect'].includes(value.type)) throw Object.assign(new Error('无效整理任务'), { status: 400 });
@@ -341,7 +348,7 @@ export class MemoryManager {
     this.jobsWrite = write.catch(() => {}); return write;
   }
   _runJobs(preferredSessionId) {
-    if (this.jobPromise || this.closed || this.closing || !this.store || !this.settings.enabled || this.isBusy() || !this.summarize) return;
+    if (this.jobPromise || this.closed || this.closing || this.clearingMemories || !this.store || !this.settings.enabled || this.isBusy() || !this.summarize) return;
     const eligible = item => item.status === 'pending' || item.status === 'failed' && item.retryAt && item.retryAt <= new Date().toISOString();
     const job = (preferredSessionId && this.jobs.find(item => item.sessionId === preferredSessionId && eligible(item))) || this.jobs.find(eligible); if (!job) return;
     if (!this.canSummarize()) { for (const item of this.jobs) if (item.status === 'pending') item.notice = '等待配置可用的老师模型'; return; }
@@ -419,6 +426,33 @@ export class MemoryManager {
     }).finally(async () => { try { await this._saveJobs(); } catch (error) { this._error(error); } this.jobPromise = null; this.jobController = null; });
   }
   pauseBackground() { this.jobController?.abort(new Error('主任务开始，暂停记忆整理')); }
+  async clearMemories() {
+    if (this.clearingMemories || this.isBusy()) throw Object.assign(new Error('请等待当前操作结束后再清空长期记忆'), { status: 409 });
+    this.clearingMemories = true;
+    try {
+      const store = await this.requireStore();
+      this.jobController?.abort(new Error('正在清空长期记忆'));
+      await this.jobPromise;
+      await this.flush();
+      // Do not let a previously queued/aborted/retrying extraction repopulate
+      // an intentionally emptied profile, including after an application restart.
+      const finishedAt = new Date().toISOString(), cancelled = [];
+      for (const job of this.jobs) if (['pending', 'running'].includes(job.status) || job.retryAt) {
+        cancelled.push([job, { ...job }]);
+        job.status = 'cancelled'; job.finishedAt = finishedAt; job.notice = '长期记忆已清空，原整理任务已取消'; delete job.retryAt;
+      }
+      try {
+        await this._saveJobs();
+        const result = store.clearMemories(ADMIN);
+        this.lastClearedAt = result.lastClearedAt;
+        return { ok: true, deletedCount: result.deletedCount };
+      } catch (error) {
+        for (const [job, prior] of cancelled) { for (const key of Object.keys(job)) delete job[key]; Object.assign(job, prior); }
+        await this._saveJobs().catch(failure => this._error(failure));
+        throw error;
+      }
+    } finally { this.clearingMemories = false; }
+  }
   async forgetSession(id) {
     if (!RUN.test(id)) throw new Error('Invalid memory session ID');
     await this.start();

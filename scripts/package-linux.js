@@ -16,7 +16,7 @@ const executable = path.join(directory, 'Class');
 assertLinuxExecutable(fs.readFileSync(executable), architecture);
 const manifestBytes = fs.readFileSync(path.join(directory, 'manifest.json'));
 const manifest = JSON.parse(manifestBytes.toString('utf8'));
-if (manifest.version !== '1.0.0' || manifest.architecture !== architecture || manifest.executable !== 'Class') throw new Error('The Linux release manifest does not match the requested target');
+if (manifest.version !== '1.1.0' || manifest.architecture !== architecture || manifest.executable !== 'Class') throw new Error('The Linux release manifest does not match the requested target');
 const names = ['Class', 'README.txt', 'THIRD_PARTY_NOTICES.txt', 'manifest.json'];
 const expectedHashes = new Map([['manifest.json', createHash('sha256').update(manifestBytes).digest('hex')]]);
 const digest = async file => { const hash = createHash('sha256'); for await (const chunk of fs.createReadStream(file)) hash.update(chunk); return hash.digest('hex'); };
@@ -54,7 +54,7 @@ async function* archiveEntries() {
   }
   yield Buffer.alloc(1024);
 }
-const filename = `Class-1.0.0-linux-${architecture}.tar.gz`, archive = path.join(parent, filename), temporary = `${archive}.${randomUUID()}.tmp`;
+const filename = `Class-1.1.0-linux-${architecture}.tar.gz`, archive = path.join(parent, filename), temporary = `${archive}.${randomUUID()}.tmp`;
 if (fs.existsSync(archive) && fs.lstatSync(archive).isSymbolicLink()) throw new Error('Refusing to replace a linked archive');
 try {
   await pipeline(Readable.from(archiveEntries()), createGzip({ level: 9 }), fs.createWriteStream(temporary, { flags: 'wx' }));
@@ -62,4 +62,4 @@ try {
 } finally { fs.rmSync(temporary, { force: true }); }
 const sums = `${await digest(executable)}  ${path.basename(directory)}/Class\n${await digest(archive)}  ${filename}\n`;
 writeReleaseFile(path.join(parent, `SHA256SUMS-linux-${architecture}.txt`), sums);
-console.log(JSON.stringify({ archive, bytes: fs.statSync(archive).size, architecture, version: '1.0.0', sha256: await digest(archive), nativeRunVerified: false }, null, 2));
+console.log(JSON.stringify({ archive, bytes: fs.statSync(archive).size, architecture, version: '1.1.0', sha256: await digest(archive), nativeRunVerified: false }, null, 2));

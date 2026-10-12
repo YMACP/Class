@@ -1,6 +1,6 @@
-Class 1.0.0 for Windows x64
+Class 1.1.0 for Windows x64
 
-使用方法：解压整个压缩包，然后双击 Class.exe。请保留同目录中的第三方许可证声明。
+使用方法：下载 Class.exe 后双击；如果下载的是压缩包，先解压。请保留随包提供的第三方许可证声明。
 无需安装 Node.js、Bun 或源码依赖。界面会通过本机浏览器打开。
 首次使用需要在界面中填写自己的模型接口、模型名称和 API Key。
 正常模型任务需要能够访问所配置的接口；部分外部工具还需要相应浏览器或命令行程序。
@@ -9,9 +9,12 @@ Class 会在首次运行时建立用户自己的数据目录；此发布包不�
 移动程序文件不等于移动数据。已有用户请继续使用原先选择的数据目录。
 
 本包面向 Windows x64，目录选择器使用系统 .NET Framework 4.x。
-ARM64 设备请选择单独的 Windows ARM64 发布包；Linux 另有独立发布包，目前不提供 macOS 构建。
+本轮仅提供 Windows x64 和 Linux amd64，不提供 ARM64 或 macOS 构建。
 本包下载校验清单为 SHA256SUMS-windows-x64.txt，另保留 SHA256SUMS.txt。
 
-2026-09-27（Asia/Shanghai）的三平台原生发布验收记录：
+Jev 判断器默认关闭。启用需要独立配置支持的服务与 API Key，不使用老师或学生的密钥。
+配置密钥并启用后显示四个判断环节，按勾选直接应用；老师仍负责最终验收。关闭即可回到原有判断流程。
+
+2026-09-27（Asia/Shanghai）的旧版 1.0.0 三平台原生发布验收记录：
 https://github.com/dsgymz/class_test/actions/runs/36258965980
-该次运行覆盖 Windows ARM64 和 Linux 两种架构，不包含 Windows x64 云端验收。
+该次运行覆盖 Windows ARM64 和 Linux 两种架构，不包含 Windows x64 云端验收，也不代表 1.1.0 的验收结果。

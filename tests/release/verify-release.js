@@ -13,7 +13,7 @@ import { getReleaseDirectory } from '../../scripts/release-paths.js';
 import { verificationHost, verifyNativeExecutable, defaultVerificationExecutable } from './windows-verification.js';
 
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const EXPECTED_VERSION = '1.0.0';
+const EXPECTED_VERSION = '1.1.0';
 const FAKE_KEY = 'class-release-verification-local-fake-key';
 const FINAL_ANSWER = 'Class release verification complete: files, media, planning and isolated browser evidence passed.';
 const expectedTools = ['write_file', 'edit_file', 'glob', 'grep', 'read_image', 'read_pdf', 'plan_write', 'plan_read', 'todo_write', 'todo_read', 'browser'];

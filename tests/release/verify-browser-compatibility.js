@@ -195,7 +195,7 @@ async function verifyWorkflow(browser, root) {
       if (!instance) await delay(100);
     }
     assert.equal(instance.pid, application.pid); const address = new URL(instance.url); assert.equal(address.protocol, 'http:'); assert.equal(address.hostname, '127.0.0.1'); assert.match(instance.token, /^[a-f0-9]{64}$/);
-    assert.equal((await api('/health')).version, '1.0.0');
+    assert.equal((await api('/health')).version, '1.1.0');
     const state = await api('/api/state'); assert.equal(await fs.realpath(state.dataDir), await fs.realpath(profile)); assert.equal(state.agents.length, 0);
     for (const [name, role] of [['teacher', 'teacher'], ['alice', 'student'], ['bob', 'student']]) await api('/api/agents', { name: 'Browser ' + name, role, model: 'browser-' + name, baseUrl: 'http://127.0.0.1:' + mock.address().port + '/v1', protocol: 'messages', apiKey: fakeKey });
     await api('/api/settings', { cwd: workspace, voteTimeoutMs: 30000 }, 'PUT');

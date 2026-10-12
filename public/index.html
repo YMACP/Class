@@ -27,6 +27,7 @@
   <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
   <symbol id="i-settings" viewBox="0 0 24 24"><path d="m9.5 3-.6 2.4-1.8 1L4.7 6.7 2.5 10.5l1.8 1.7v2.1l-1.8 1.8 2.2 3.8 2.4-.7 1.8 1 .6 2.3h4.4l.6-2.3 1.8-1 2.4.7 2.2-3.8-1.8-1.8v-2.1l1.8-1.7-2.2-3.8-2.4.7-1.8-1-.6-2.4z" transform="translate(.3 -1.4) scale(.97)"/><circle cx="12" cy="12" r="3.2"/></symbol>
+  <symbol id="i-judge" viewBox="0 0 24 24"><path d="M12 3v18M4 7h16M7 7l-4 8h8L7 7Zm10 0-4 8h8l-4-8ZM7 21h10"/></symbol>
   <symbol id="i-logs" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></symbol>
   <symbol id="i-answer" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M8 15l2.5 2.5L16 12"/></symbol>
   <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v2M3 7v12a2 2 0 0 0 2 2h13a2 2 0 0 0 2-1.6L22 10H6z"/></symbol>
@@ -49,7 +50,7 @@
         <div class="setup-callout" id="setup-callout"><div class="setup-icon"><svg><use href="#i-users"/></svg></div><div><strong>组建你的讨论小组</strong></div><button class="button secondary" data-go-agents>配置成员 <svg class="setup-arrow" viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5"/></svg></button></div>
         <div class="workspace-grid">
           <div class="task-column">
-            <section class="card task-card"><div class="section-heading"><div class="section-title"><h2>布置任务</h2></div><div class="section-controls"><button id="answer-button" type="button" class="workspace-icon-button" aria-label="答案" title="答案" aria-haspopup="dialog" aria-controls="answer-dialog"><svg aria-hidden="true"><use href="#i-answer"/></svg></button><button id="team-button" type="button" class="workspace-icon-button" aria-label="小组成员" title="小组成员" aria-haspopup="dialog" aria-controls="team-dialog"><svg aria-hidden="true"><use href="#i-users"/></svg></button><button id="settings-button" type="button" class="workspace-icon-button" aria-label="运行设置" title="运行设置" aria-haspopup="dialog" aria-controls="settings-dialog"><svg aria-hidden="true"><use href="#i-settings"/></svg></button></div></div>
+            <section class="card task-card"><div class="section-heading"><div class="section-title"><h2>布置任务</h2></div><div class="section-controls"><button id="answer-button" type="button" class="workspace-icon-button" aria-label="答案" title="答案" aria-haspopup="dialog" aria-controls="answer-dialog"><svg aria-hidden="true"><use href="#i-answer"/></svg></button><button id="team-button" type="button" class="workspace-icon-button" aria-label="小组成员" title="小组成员" aria-haspopup="dialog" aria-controls="team-dialog"><svg aria-hidden="true"><use href="#i-users"/></svg></button><button id="settings-button" type="button" class="workspace-icon-button" aria-label="运行设置" title="运行设置" aria-haspopup="dialog" aria-controls="settings-dialog"><svg aria-hidden="true"><use href="#i-settings"/></svg></button><button id="judge-settings-button" type="button" class="workspace-icon-button" aria-label="Jev设置" title="Jev设置" aria-haspopup="dialog" aria-controls="judge-settings-dialog"><svg aria-hidden="true"><use href="#i-judge"/></svg></button></div></div>
               <form id="task-form"><label class="field-label" for="task-input">你希望解决什么问题？</label><textarea id="task-input" rows="6" placeholder="在此描述你的问题与要求，老师会将同一个任务交给所有学生独立求解。" required></textarea>
                 <div class="task-actions"><button id="start-button" type="submit" class="button primary"><svg><use href="#i-play"/></svg>开始讨论</button><button id="stop-button" type="button" class="button danger" hidden><svg><use href="#i-stop"/></svg>停止任务</button></div>
               </form>
@@ -74,7 +75,7 @@
         </form>
       </section>
       <section class="page memory-page" id="page-memory" hidden>
-        <div class="page-heading compact-page-heading memory-heading"><button type="button" class="workspace-icon-button" id="memory-settings-button" aria-label="记忆设置" title="记忆设置" aria-haspopup="dialog" aria-controls="memory-settings-dialog"><svg aria-hidden="true"><use href="#i-settings"/></svg></button><button type="button" class="workspace-icon-button" id="memory-refresh" aria-label="刷新记忆" title="刷新记忆"><svg aria-hidden="true"><use href="#i-refresh"/></svg></button></div>
+        <div class="page-heading compact-page-heading memory-heading"><button type="button" class="workspace-icon-button" id="memory-settings-button" aria-label="记忆设置" title="记忆设置" aria-haspopup="dialog" aria-controls="memory-settings-dialog"><svg aria-hidden="true"><use href="#i-settings"/></svg></button><button type="button" class="workspace-icon-button" id="memory-refresh" aria-label="刷新记忆" title="刷新记忆"><svg aria-hidden="true"><use href="#i-refresh"/></svg></button><button type="button" class="workspace-icon-button memory-clear-button" id="memory-clear" aria-label="清空长期记忆" title="清空长期记忆"><svg aria-hidden="true"><use href="#i-trash"/></svg></button></div>
         <p id="memory-error" class="inline-error" role="alert" hidden></p>
         <section id="memory-entries-panel" aria-label="长期记忆">
           <form id="memory-entry-search" class="memory-search-form card"><label class="memory-query">查找长期记忆<input id="memory-entry-query" type="search" placeholder="输入关键词" maxlength="500"></label><label>状态<select id="memory-entry-status"><option value="">全部状态</option><option value="active">已启用</option><option value="paused">已暂停</option><option value="invalid">已失效</option></select></label><label>记忆类型<select id="memory-entry-kind"><option value="">全部类型</option><option value="user">用户画像</option><option value="agent">Agent画像</option></select></label><button type="submit" class="button secondary">查询</button></form>
@@ -107,6 +108,19 @@
     <p id="settings-dirty" class="field-note" hidden>设置已更改，保存后用于下一次运行。</p>
     <div class="dialog-actions"><button type="submit" id="settings-save" class="button secondary">保存</button></div>
   </form></div>
+</dialog>
+<dialog closedby="none" id="judge-settings-dialog" class="agent-dialog workspace-dialog judge-settings-dialog" aria-labelledby="judge-settings-title">
+  <div class="dialog-heading"><h2 id="judge-settings-title">Jev设置</h2><button type="button" class="icon-button" data-dialog-close="judge-settings-dialog" aria-label="关闭Jev设置"><svg aria-hidden="true"><use href="#i-close"/></svg></button></div>
+  <form id="judge-settings-form">
+    <div class="judge-enabled-switch" role="group" aria-label="Jev启用状态"><button id="judge-enable" type="button" aria-pressed="false">启用</button><button id="judge-disable" type="button" aria-pressed="true">停用</button></div>
+    <label>接口地址<input id="judge-url" type="url" maxlength="2048" required spellcheck="false"></label>
+    <label>Jev密钥 <span id="judge-key-state" class="subtle-label"></span><input id="judge-key" type="password" autocomplete="new-password" maxlength="4096" placeholder="输入Jev密钥"></label>
+    <fieldset id="judge-features" class="judge-features" hidden disabled><legend>判断范围</legend><label class="checkbox-label"><input id="judge-task-dispatch" type="checkbox"><span>任务下发</span></label><label class="checkbox-label"><input id="judge-tool-calls" type="checkbox"><span>工具调用</span></label><label class="checkbox-label"><input id="judge-tool-results" type="checkbox"><span>执行结果</span></label><label class="checkbox-label"><input id="judge-submission-review" type="checkbox"><span>提交材料</span></label></fieldset>
+    <details class="judge-advanced"><summary>高级设置</summary><div class="field-grid"><label>判断超时（毫秒）<input id="judge-timeout" type="number" min="50" max="10000" step="1" required></label><label>长输出阈值（字符）<input id="judge-min-output" type="number" min="1000" max="1000000" step="1" required></label></div></details>
+    <p id="judge-check-status" class="judge-check-status" role="status" aria-live="polite" hidden></p>
+    <div class="dialog-actions"><button id="judge-check" type="button" class="button secondary">测试连接</button><button id="judge-save" type="submit" class="button primary">保存</button></div>
+  </form>
+  <section id="judge-run-stats" class="judge-run-stats" aria-label="所选任务 Jev 统计" hidden><h3>所选任务</h3><p id="judge-run-status"></p><dl><div><dt>请求次数</dt><dd id="judge-run-requests">0</dd></div><div><dt>超时回退</dt><dd id="judge-run-timeouts">0</dd></div><div><dt>异常或不确定回退</dt><dd id="judge-run-fallbacks">0</dd></div><div><dt>实际节省字符</dt><dd id="judge-run-saved">0</dd></div><div><dt>累计判断耗时</dt><dd id="judge-run-latency">0 ms</dd></div></dl><p id="judge-run-usage" hidden></p></section>
 </dialog>
 <dialog closedby="none" id="team-dialog" class="agent-dialog workspace-dialog team-dialog" aria-labelledby="team-dialog-title">
   <div class="dialog-heading"><h2 id="team-dialog-title">小组成员</h2><button type="button" class="icon-button" data-dialog-close="team-dialog" aria-label="关闭小组成员"><svg aria-hidden="true"><use href="#i-close"/></svg></button></div>

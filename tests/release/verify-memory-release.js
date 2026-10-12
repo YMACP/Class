@@ -1,5 +1,5 @@
 // Isolated release verification with a real HTTP model stub. No external model
-// service is called. Usage: node tests/release/verify-memory-release.js [--node | --exe executable] [--report report.json] [--check-assets]
+// service is called. Usage: node tests/release/verify-memory-release.js [--node | --exe executable] [--report report.json] [--check-assets] [--check-clear]
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -15,6 +15,7 @@ for (let index = 0; index < argv.length; index++) {
   const option = argv[index];
   if (option === '--node') { options.node = true; continue; }
   if (option === '--check-assets') { options.checkAssets = true; continue; }
+  if (option === '--check-clear') { options.checkClear = true; continue; }
   const value = argv[++index];
   if (!['--exe', '--report'].includes(option) || !value || value.startsWith('--')) throw Error('Usage: node tests/release/verify-memory-release.js [--node | --exe executable] [--report report.json]');
   options[option.slice(2)] = path.resolve(value);
@@ -203,7 +204,42 @@ try {
   const journal = (await fs.readFile(path.join(profile, 'history', recallRun, 'journal.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line));
   const tools = journal.filter(record => record.kind === 'tool' && record.activity?.type === 'completed').map(record => record.activity.action.name);
   assert.deepEqual(tools, ['memory_search', 'memory_get', 'memory_search', 'memory_get', 'session_search', 'session_get', 'memory_assess', 'memory_assess']); report.checks.actualToolJournalVerified = true; report.completedTools = tools;
-  report.passed = Object.values(report.checks).every(Boolean) && Object.keys(report.checks).length === 14;
+  if (options.checkClear) {
+    // Use the two profiles created by a real classroom task above, including
+    // inactive states. The clear endpoint must not depend on page filters.
+    await api('/api/memory/entries/' + encodeURIComponent(memoryIds.user), 'PUT', { status: 'paused' });
+    await api('/api/memory/entries/' + encodeURIComponent(memoryIds.agent), 'PUT', { status: 'invalid' });
+    const summaryFile = path.join(profile, 'history', sourceRun + '.json');
+    const originalSummary = await fs.readFile(summaryFile);
+    const anonymous = await fetch(application.url + '/api/memory/entries', { method: 'DELETE', signal: AbortSignal.timeout(10000) });
+    assert.equal(anonymous.status, 401); await anonymous.arrayBuffer();
+    assert.ok((await api('/api/memory/entries')).total >= 2);
+    report.checks.clearRequiresAuthentication = true;
+    const cleared = await api('/api/memory/entries', 'DELETE');
+    assert.equal(cleared.ok, true); assert.ok(cleared.deletedCount >= 2);
+    for (const query of ['', '?kind=user', '?kind=agent', '?status=paused', '?status=invalid', '?query=beacon']) {
+      const empty = await api('/api/memory/entries' + query); assert.equal(empty.total, 0); assert.deepEqual(empty.items, []);
+    }
+    assert.equal((await api('/api/memory/status')).memories, 0);
+    report.checks.clearRemovesAllMemoryTypesAndStates = true;
+    const afterClearSearch = await api('/api/memory/sessions/search', 'POST', { query: 'release archive beacon', sessionId: sourceRun, limit: 100 });
+    assert.ok(afterClearSearch.items.some(item => item.reference === sourceReference && item.text.includes(marker)));
+    assert.deepEqual(await fs.readFile(summaryFile), originalSummary);
+    report.checks.clearPreservesOriginalHistoryAndSearch = true;
+    const repeated = await api('/api/memory/entries', 'DELETE'); assert.equal(repeated.ok, true); assert.equal(repeated.deletedCount, 0);
+    report.checks.clearEmptyMemoryIsIdempotent = true;
+    await application.close(); application = undefined;
+    application = await startApplication();
+    await waitFor(() => api('/api/memory/status'), status => status.available && !status.indexing && status.pending === 0, 'post-clear restart indexing');
+    // Include a scheduled scan after restart, so an immediate empty response
+    // alone cannot hide old automatic extraction resurrecting the memories.
+    await sleep(5500);
+    assert.equal((await api('/api/memory/entries')).total, 0);
+    const restartedSearch = await api('/api/memory/sessions/search', 'POST', { query: 'release archive beacon', sessionId: sourceRun, limit: 100 });
+    assert.ok(restartedSearch.items.some(item => item.reference === sourceReference));
+    report.checks.clearSurvivesRestartWithoutLosingSessions = true;
+  }
+  report.passed = Object.values(report.checks).every(Boolean) && Object.keys(report.checks).length === (options.checkClear ? 19 : 14);
 } catch (error) { report.passed = false; report.error = error.stack || error.message; process.exitCode = 1; }
 finally {
   try { await application?.close(); } catch (error) { report.cleanup.error = error.message; report.passed = false; process.exitCode = 1; }
