@@ -10,10 +10,10 @@ import { linuxArchitecture, assertLinuxExecutable } from './linux-target.js';
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const runtimeVersion = '1.4.2';
 // Official npm tarballs verified against their package-lock SHA512 integrity.
-const runtimeHashes = { amd64: 'a83d263767d839e4d2649ca8e35d07159c7afc99afdc96d731ced29e056dda0c', arm64: '616f267a34278ff5ac282df37ffdfba1d7141f4f6926bca99af2cd6ef3ad32b1' };
+const runtimeHash = 'a83d263767d839e4d2649ca8e35d07159c7afc99afdc96d731ced29e056dda0c';
 export function buildLinuxExecutable({ architecture, entry, output, definitions = [] }) {
   architecture = linuxArchitecture(architecture);
-  if (!['win32', 'linux'].includes(process.platform) || !['x64', 'arm64'].includes(process.arch)) throw new Error('Use a Windows or Linux x64/ARM64 build host.');
+  if (!['win32', 'linux'].includes(process.platform) || process.arch !== 'x64') throw new Error('Use a Windows or Linux x64 build host.');
   const directory = outsideSourceDirectory(path.dirname(path.resolve(output)));
   output = path.join(directory, path.basename(output));
   if (fs.existsSync(output)) {
@@ -22,8 +22,7 @@ export function buildLinuxExecutable({ architecture, entry, output, definitions 
   }
   const packageInfo = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   if (packageInfo.version !== '1.1.0') throw new Error('Keep the Class release version at 1.1.0.');
-  const suffix = process.arch === 'arm64' ? 'aarch64' : 'x64-baseline';
-  const hostPackage = `bun-${process.platform === 'win32' ? 'windows' : 'linux'}-${suffix}`;
+  const hostPackage = `bun-${process.platform === 'win32' ? 'windows' : 'linux'}-x64-baseline`;
   const local = path.join(root, 'node_modules', '@oven', hostPackage, 'bin', process.platform === 'win32' ? 'bun.exe' : 'bun');
   const bun = process.env.BUN_EXECUTABLE || process.env.BUN_EXE || (process.versions.bun ? process.execPath : fs.existsSync(local) ? local : 'bun');
   const check = spawnSync(bun, ['-e', 'console.log(JSON.stringify({file:process.execPath,version:Bun.version}))'], { cwd: root, windowsHide: true, encoding: 'utf8' });
@@ -43,12 +42,12 @@ export function buildLinuxExecutable({ architecture, entry, output, definitions 
       if (!path.isAbsolute(targetRuntime)) throw new Error('BUN_COMPILE_EXECUTABLE must be an absolute path to the matching Bun 1.4.2 Linux runtime.');
       const runtimeBytes = fs.readFileSync(targetRuntime);
       assertLinuxExecutable(runtimeBytes, architecture);
-      if (createHash('sha256').update(runtimeBytes).digest('hex') !== runtimeHashes[architecture]) throw new Error('The supplied compile runtime must be the official matching Linux Bun 1.4.2 binary.');
+      if (createHash('sha256').update(runtimeBytes).digest('hex') !== runtimeHash) throw new Error('The supplied compile runtime must be the official matching Linux Bun 1.4.2 binary.');
       const stagedRuntime = path.join(temporary, 'target-bun'); fs.copyFileSync(targetRuntime, stagedRuntime);
       runtimeArguments.push(`--compile-executable-path=${stagedRuntime}`);
     }
     const compiled = path.join(temporary, path.basename(output));
-    const target = architecture === 'amd64' ? 'bun-linux-x64-baseline' : 'bun-linux-arm64';
+    const target = 'bun-linux-x64-baseline';
     const result = spawnSync(compiler, ['build', path.join(root, entry), '--compile', `--target=${target}`, '--outfile', compiled,
       '--no-compile-autoload-dotenv', '--no-compile-autoload-bunfig', ...definitions.map(value => '--define=' + value), ...runtimeArguments],
     { cwd: temporary, windowsHide: true, stdio: 'inherit', env: { ...process.env, BUN_INSTALL_CACHE_DIR: path.join(compileParent, 'bun-cache') } });

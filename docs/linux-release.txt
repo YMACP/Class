@@ -2,9 +2,6 @@ Class 1.1.0 for Linux amd64
 
 本轮仅提供 amd64（x86-64），下载 Class 可执行文件；可选归档名为 Class-1.1.0-linux-amd64.tar.gz。
 本包为 glibc Linux 构建，不适用于 Alpine/musl。当前版本的运行验证以对应验收报告为准。
-2026-09-27（Asia/Shanghai），旧版 1.0.0 两种 Linux 架构各通过五套独立发布验收，使用隔离数据和本地模拟模型。
-报告：https://github.com/dsgymz/class_test/actions/runs/36258965980
-该旧版结果不代表 1.1.0 的验收结果，也不等于全部源码单元测试或真实模型质量测试通过。
 
 下载后赋予执行权限并运行；如果下载的是归档，先解压：
   chmod +x Class
@@ -30,5 +27,5 @@ Linux 凭据用 AES-256-GCM 保存，credentials.key 与密文均保存在用户
 备份/迁移请保留整个数据目录；不要单独删除密钥，也不要把数据目录放进源码或发布包。
 Windows DPAPI 凭据不能直接在 Linux 上解密，跨系统迁移模型配置时需要重新配置密钥。
 
-保留 THIRD_PARTY_NOTICES.txt。manifest.json 记录目标架构、版本与文件 SHA256；压缩包校验见同次发布的 SHA256SUMS-linux-<架构>.txt。
+保留 THIRD_PARTY_NOTICES.txt。manifest.json 记录目标架构、版本与文件 SHA256；压缩包校验见同次发布的 SHA256SUMS-linux-amd64.txt。
 manifest.json 中 nativeRunVerified 记录构建阶段状态；后续原生运行验收以独立报告为准。

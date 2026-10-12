@@ -30,14 +30,14 @@ export function defaultVerificationExecutable() {
 export function verificationHost() {
   if (process.platform === 'linux') {
     const machine = os.machine();
-    return { expectedArchitecture: linuxArchitecture(process.env.CLASS_LINUX_ARCH || process.arch), platform: process.platform, architecture: process.arch, osArchitecture: ({ x86_64: 'amd64', aarch64: 'arm64' })[machine] || machine, runtime: process.versions.bun ? 'bun' : 'node', runtimeVersion: process.versions.bun || process.versions.node };
+    return { expectedArchitecture: linuxArchitecture(process.env.CLASS_LINUX_ARCH || process.arch), platform: process.platform, architecture: process.arch, osArchitecture: machine === 'x86_64' ? 'amd64' : machine, runtime: process.versions.bun ? 'bun' : 'node', runtimeVersion: process.versions.bun || process.versions.node };
   }
   const declared = process.env.PROCESSOR_ARCHITEW6432 || process.env.PROCESSOR_ARCHITECTURE || process.arch;
   return {
     expectedArchitecture: windowsArchitecture(),
     platform: process.platform,
     architecture: process.arch,
-    osArchitecture: ({ AMD64: 'x64', ARM64: 'arm64', x86: 'ia32' })[declared] || declared,
+    osArchitecture: ({ AMD64: 'x64', x86: 'ia32' })[declared] || declared,
     runtime: process.versions.bun ? 'bun' : 'node',
     runtimeVersion: process.versions.bun || process.versions.node,
   };

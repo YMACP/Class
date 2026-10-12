@@ -1,8 +1,8 @@
 # 命令行与模型配置
 
-[返回首页](../README.md) · [开发环境](development.md) · [示例文件](../examples/README.md) · [工具恢复规则](tools.md)
+[返回首页](../README.md) · [示例文件](../examples/README.md) · [工具恢复规则](tools.md)
 
-在 Windows 的源码根目录运行，先使用与设备架构一致的 Node.js 完成 `npm ci`。真实任务需要填写可用的模型与接口，并通过环境变量提供用户自己的 API key。
+在 Windows x64 的源码根目录运行，先使用 x64 版 Node.js 完成 `npm ci`。真实任务需要填写可用的模型与接口，并通过环境变量提供用户自己的 API key。
 
 ## 创建自己的配置
 

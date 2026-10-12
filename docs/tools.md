@@ -1,8 +1,8 @@
 # Agent 工具与运行控制
 
-[返回首页](../README.md) · [调度规则](architecture.md) · [记忆工具](memory.md)
+[返回首页](../README.md) · [记忆工具](memory.md)
 
-本文说明 Class 的工具能力，Windows x64 与 ARM64 构建共用这些实现。Class 在源码中实现这些工具，通过已配置的模型接口调用，不依赖 Claude Code 或 Codex 客户端来执行任务。
+本文说明 Class 的工具能力，Windows x64 与 Linux amd64 构建共用这些实现。Class 在源码中实现这些工具，通过已配置的模型接口调用，不依赖 Claude Code 或 Codex 客户端来执行任务。
 
 新增能力只扩展学生和老师的工具，不增加新的任务阶段，也不改变发现投票、老师审查、否决反馈和恢复规则。
 

@@ -3,11 +3,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDirectoryPicker } from './build-directory-picker.js';
 import { embedUi } from './embed-ui.js';
+import { linuxArchitecture } from './linux-target.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export function prepareAssets({ platform = process.platform, architecture = process.arch } = {}) {
   if (platform === 'win32') buildDirectoryPicker({ architecture });
   else if (platform === 'linux') {
+    linuxArchitecture(architecture);
     const file = path.join(root, 'build', 'generated', 'directory-picker.generated.js');
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const temporary = `${file}.${process.pid}.tmp`;

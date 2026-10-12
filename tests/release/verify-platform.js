@@ -113,7 +113,7 @@ async function verifyPicker(workspace) {
       $pattern=$window.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern); $pattern.Close();
       [pscustomobject]@{ opened=$true; cancelledViaUIAutomation=$true; cancelMethod='WindowPattern.Close'; pid=$owned.ProcessId; machine=$machine } | ConvertTo-Json -Compress`;
     report.directoryPicker = JSON.parse(await runPowerShell(script));
-    assert.equal(report.directoryPicker.machine, report.host.expectedArchitecture === 'arm64' ? 0xaa64 : 0x8664, 'Bundled native picker must match the target architecture');
+    assert.equal(report.directoryPicker.machine, 0x8664, 'Bundled native picker must match the Windows x64 target');
     assert.deepEqual(await pending, { cancelled: true });
     report.checks.nativeDirectoryDialogOpenedAndCancelled = true;
   } finally { controller.abort(); await pending.catch(() => {}); }

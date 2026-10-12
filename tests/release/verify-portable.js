@@ -19,7 +19,7 @@ for (let index = 0; index < args.length; index += 2) {
   if (!['--exe', '--report'].includes(option) || !value || value.startsWith('--')) throw Error('Usage: node tests/release/verify-portable.js [--exe executable] [--report report.json]');
   options[option.slice(2)] = path.resolve(value);
 }
-if (process.platform !== 'win32') throw Error('This verifier requires native Windows x64 or ARM64.');
+if (process.platform !== 'win32') throw Error('This verifier requires native Windows x64.');
 const executable = options.exe || path.join(getReleaseDirectory(), 'Class.exe');
 const parent = await fs.realpath(os.tmpdir()), directory = await fs.mkdtemp(path.join(parent, 'class-portable-verifier-'));
 const distribution = path.join(directory, 'distribution'), runtimeHome = path.join(directory, 'runtime-home');
