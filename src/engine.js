@@ -2,6 +2,11 @@ import { EventEmitter, setMaxListeners } from 'node:events';
 import { createHash } from 'node:crypto';
 import { CONTEXT_1M_UNSUPPORTED_MESSAGE } from './context-policy.js';
 import { isPlanningTool } from './planning-tools.js';
+import { taskDigest, normalizeCriteria, checkAcceptance, encodeState, decodeState } from './task-state.js';
+import { normalizeTaskMode, normalizeTaskModeDefinition } from './task-mode.js';
+import { ContextArchive } from './context-archive.js';
+
+const SNAPSHOT_FIELDS = ['events','eventSequence','blackboard','blackboardOmitted','outcomes','outcomesOmitted','pending','candidates','histories','memberFailures','recoveryVersions','publicProgressSequence','evidence','feedbackHistory','feedbackVersion','feedbackDelivered','submissionFeedback','rejectedEvidence','knownEvidence','evidenceIdentities','evidenceEpoch','round','reviewRound','phaseId','candidateSequence','discoverySequence','submissionSequence','acceptedReview','acceptanceCriteria','workingDigest','activeCandidates','activeDiscoveries','resumeWarnings','verifiedEvidenceRefs','recoveryEvidenceRefs'];
 
 const copy = value => structuredClone(value);
 const cancelled = signal => signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason || 'cancelled'));
@@ -82,7 +87,7 @@ function outcomeText(entry) {
 
 /** Parallel same-task solving with recoverable review phases. */
 export class ClassEngine extends EventEmitter {
-  constructor({ students, teacher, voteTimeoutMs = 30000, taskTimeoutMs = 600000, discoveryWindowMs = 100, maxRounds = 100, tools, teacherTools, journal, eventLimit = 1000 } = {}) {
+  constructor({ students, teacher, voteTimeoutMs = 30000, taskTimeoutMs = 600000, discoveryWindowMs = 100, maxRounds = 100, tools, teacherTools, journal, eventLimit = 1000, resumeState, onCheckpoint, attachments = [], taskMode, taskModeDefinition } = {}) {
     super();
     if (!Array.isArray(students) || students.length < 2) throw new TypeError('At least two students are required');
     const ids = students.map(student => student.id);
@@ -96,9 +101,102 @@ export class ClassEngine extends EventEmitter {
     }
     Object.assign(this, { students, teacher, voteTimeoutMs, taskTimeoutMs, discoveryWindowMs, maxRounds, tools, teacherTools, journal, eventLimit });
     this.running = false; this.memberFailures = new Map();
+    this.contextArchives = new Map();
+    this.resumeState = resumeState; this.onCheckpoint = onCheckpoint; this.checkpointQueue = Promise.resolve();
+    this.attachments = copy(attachments);
+    this.taskMode = normalizeTaskMode(taskMode);
+    this.taskModeDefinition = normalizeTaskModeDefinition(this.taskMode, taskModeDefinition);
+  }
+  exportState() {
+    if (!this.task) throw Error('No task state available');
+    return { schemaVersion: 1, runId: this.journal?.runId ?? null, task: copy(this.task), taskMode: this.taskMode, ...(this.taskModeDefinition ? { taskModeDefinition: copy(this.taskModeDefinition) } : {}), studentIds: this.students.map(s => s.id), teacherId: this.teacher.id || 'teacher',
+      capturedAt: new Date().toISOString(), phase: this.phase, terminalStatus: this.terminalStatus || null,
+      engine: encodeState(Object.fromEntries(SNAPSHOT_FIELDS.map(key => [key, this[key]]))),
+      toolsState: { student: this.tools?.exportState?.() ?? null, teacher: this.teacherTools?.exportState?.() ?? null },
+      agents: Object.fromEntries([...this.students, this.teacher].map(member => [member.id || 'teacher', member.exportState?.() ?? null])) };
+  }
+  async checkpoint(reason = 'state') {
+    if (!this.onCheckpoint) return;
+    const snapshot = this.exportState();
+    const operation = this.checkpointQueue.then(async () => { await this.journal?.flush(); await this.onCheckpoint(snapshot, { reason }); });
+    this.checkpointQueue = operation.catch(() => {});
+    try { await operation; } catch (cause) { const error = Object.assign(new Error('任务恢复点保存失败，已停止以避免重复执行。', { cause }), { code: 'STORAGE_ERROR', fatalStorage: true }); this.fail(error); throw error; }
+  }
+  importState(snapshot, internal = false) {
+    if (!internal) { if (this.running) throw Error('Cannot import state while a task is running'); if (snapshot?.schemaVersion !== 1) throw Error('Unsupported task snapshot'); this.resumeState = copy(snapshot); return; }
+    if (!snapshot || snapshot.schemaVersion !== 1 || snapshot.terminalStatus === 'completed' || JSON.stringify(snapshot.task) !== JSON.stringify(this.task) || JSON.stringify(snapshot.studentIds) !== JSON.stringify(this.students.map(s => s.id)) || snapshot.teacherId !== (this.teacher.id || 'teacher') || (snapshot.runId && this.journal?.runId && snapshot.runId !== this.journal.runId)) throw Error('恢复点与当前任务或成员不匹配。');
+    if (normalizeTaskMode(snapshot.taskMode) !== this.taskMode) throw Error('恢复点与当前任务模式不匹配。');
+    if (JSON.stringify(normalizeTaskModeDefinition(this.taskMode, snapshot.taskModeDefinition)) !== JSON.stringify(this.taskModeDefinition)) throw Error('恢复点与当前任务模式定义不匹配。');
+    const state = decodeState(snapshot.engine);
+    if (!state || !(state.histories instanceof Map) || !(state.evidence instanceof Map) || !Array.isArray(state.pending) || !Array.isArray(state.candidates)) throw Error('任务恢复点损坏。');
+    for (const key of SNAPSHOT_FIELDS) if (Object.hasOwn(state, key)) this[key] = state[key];
+    if (snapshot.toolsState?.student) this.tools?.importState?.(snapshot.toolsState.student);
+    if (snapshot.toolsState?.teacher) this.teacherTools?.importState?.(snapshot.toolsState.teacher);
+    for (const member of [...this.students, this.teacher]) { const saved = snapshot.agents?.[member.id || 'teacher']; if (saved) { if (!member.importState) throw Error('成员不支持恢复会话。'); member.importState(saved); } }
+    // A model review/merge may be in flight. Requeue its inputs, never OS work.
+    const queued = new Set(this.candidates.map(item => item.candidateId));
+    for (const item of this.activeCandidates || []) if (!queued.has(item.candidateId)) this.candidates.push(item);
+    const pending = new Set(this.pending.map(item => item.submissionId));
+    for (const item of this.activeDiscoveries || []) if (!pending.has(item.submissionId)) this.pending.push(item);
+    this.activeCandidates = []; this.activeDiscoveries = []; this.resumeWarnings ||= [];
+    for (const [studentId, member] of this.evidence) for (const item of member.inProgress.values()) {
+      item.status = 'needs_verification'; item.executionStatus = 'unknown';
+      this.resumeWarnings.push({ studentId, callId: item.callId, toolName: item.action?.name, evidenceRef: item.evidenceRef, reason: '原执行进程不恢复；只能先读取证据或当前状态核查，禁止自动重放原操作。' });
+    }
+    for (const member of [...this.students, this.teacher]) for (const warning of member.getRecoveryWarnings?.() || []) {
+      const studentId = member.id || 'teacher', callId = `model:${studentId}:${warning.callId}`;
+      if (!this.resumeWarnings.some(item => item.callId === callId)) this.resumeWarnings.push({ ...warning, studentId, callId });
+    }
+    this.recoveryEvidenceRefs = new Set();
+    this.memberFailures = new Map(); this.paused = false;
   }
   stop(reason = 'stopped') {
     if (this.running && !this.finished) { this.stopRequested = true; this.stopReason = reason; this.life.abort(new Error(reason)); this.notify(); }
+  }
+  toolTransition(operation) {
+    const next = this.toolTransitions.then(() => {
+      this.life.signal.throwIfAborted(); return operation();
+    });
+    this.toolTransitions = next.catch(() => {});
+    return interruptible(next, this.life.signal);
+  }
+  async requestPause() {
+    if (!this.running || this.finished || this.life.signal.aborted) return false;
+    const changed = !this.userPaused;
+    this.userPaused = true; this.userPauseRevision++; this.notify();
+    if (changed) this.record('task.paused', { userPaused: true });
+    await this.toolTransition(() => Promise.all([this.tools, this.teacherTools].filter(Boolean).map(manager => manager.pauseAll?.())));
+    return true;
+  }
+  async requestResume() {
+    if (!this.running || this.finished || this.life.signal.aborted || !this.userPaused) return false;
+    const revision = ++this.userPauseRevision;
+    let resumed = false;
+    try { return await this.toolTransition(async () => {
+      if (revision !== this.userPauseRevision) return false;
+      await this.teacherTools?.resumeAll?.();
+      if (!this.paused && !this.candidates.length && !this.pending.length) await this.tools?.resumeAll?.();
+      this.life.signal.throwIfAborted();
+      // A new pause or submission can arrive during an OS resume command.
+      if (revision !== this.userPauseRevision) {
+        if (this.userPaused) await Promise.all([this.tools, this.teacherTools].filter(Boolean).map(manager => manager.pauseAll?.()));
+        return false;
+      }
+      if (this.paused || this.candidates.length || this.pending.length) await this.tools?.pauseAll?.();
+      this.life.signal.throwIfAborted();
+      if (revision !== this.userPauseRevision) return false;
+      resumed = true; this.userPaused = false; this.record('task.unpaused', { userPaused: false }); this.notify();
+      return true;
+    }); } catch (error) {
+      // Releasing the gate may finish the run before this request's promise is
+      // observed. The completed resume is still successful in that race.
+      if (resumed) return true;
+      throw error;
+    }
+  }
+  async waitForUserResume(signal = this.life.signal) {
+    while (this.userPaused && !signal.aborted) await this.wait(signal);
+    signal.throwIfAborted();
   }
   fail(error) {
     if (!this.running || this.finished) return;
@@ -151,7 +249,7 @@ export class ClassEngine extends EventEmitter {
     while (true) {
       this.life.signal.throwIfAborted();
       try {
-        const result=await interruptible(Promise.resolve().then(operation),this.life.signal);
+        const result=await interruptible(Promise.resolve().then(async () => { await this.waitForUserResume(); return operation(); }),this.life.signal);
         await this.recoveredMember(this.teacher);return result;
       } catch(error) {
         await this.isolateMember(this.teacher,'teacher',error);
@@ -263,8 +361,26 @@ export class ClassEngine extends EventEmitter {
   }
   context(studentId, signal = this.life.signal, { gated = true } = {}) {
     const generation = this.generation;
+    let contextArchive;
+    if (this.journal?.directory) {
+      if (!this.contextArchives.has(studentId)) this.contextArchives.set(studentId, new ContextArchive({ directory: this.journal.directory, owner: studentId, secrets: this.journal.secrets, storageGuard: this.journal.storageGuard }));
+      contextArchive = this.contextArchives.get(studentId);
+    }
     const ctx = {
-      task: copy(this.task), studentId, signal, tools: this.tools,
+      task: copy(this.task), taskMode: this.taskMode, ...(this.taskModeDefinition ? { taskModeDefinition: copy(this.taskModeDefinition) } : {}), attachments: copy(this.attachments), studentId, signal, tools: this.tools,
+      acceptanceCriteria: copy(this.acceptanceCriteria || []), resumeWarnings: copy(this.resumeWarnings || []),
+      taskSummary: taskDigest({ previous: this.workingDigest, blackboard: this.blackboard, history: this.histories.get(studentId) || [], feedbackHistory: this.feedbackHistory }),
+      persistCheckpoint: reason => this.checkpoint(reason),
+      ...(contextArchive ? {
+        archiveContext: async value => {
+          signal.throwIfAborted();
+          if (generation !== this.generation || this.finished) throw new Error('Task is no longer active');
+          const reference = await contextArchive.write(value, signal);
+          signal.throwIfAborted();
+          return reference;
+        },
+        readContext: value => contextArchive.read(value, signal),
+      } : {}),
       blackboard: copy(this.blackboard), blackboardOmitted: this.blackboardOmitted, history: copy(this.histories.get(studentId) || []),
       feedbackVersion: this.feedbackVersion, feedbackVersionUsed: this.feedbackVersion,
       feedbackHistory: this.feedbackHistory.slice(-5).map(entry => summary(entry, 0, { remaining: 6000 })), submissionFeedback: this.submissionFeedback.get(studentId) || '',
@@ -297,7 +413,7 @@ export class ClassEngine extends EventEmitter {
         }
       },
       checkpoint: async () => {
-        while (gated && (this.paused || this.memberFailures.get(studentId)?.status === 'isolated') && !signal.aborted && generation === this.generation) await this.wait(signal);
+        while ((this.userPaused || (gated && (this.paused || this.memberFailures.get(studentId)?.status === 'isolated'))) && !signal.aborted && generation === this.generation) await this.wait(signal);
         signal.throwIfAborted(); if (generation !== this.generation || this.finished) throw new Error('Task is no longer active');
       }
     };
@@ -324,6 +440,7 @@ export class ClassEngine extends EventEmitter {
     const saved = await this.archive({ kind: 'tool', studentId: activity.studentId, activity });
     if (generation !== this.generation || this.finished) return saved;
     const member = this.evidence.get(activity.studentId);
+    if (this.resumeWarnings?.some(item => !item.resolved) && activity.type === 'completed' && ['read_file','list_files','glob','grep','file_search','search_files','search_content','read_evidence','read_media'].includes(activity.action?.name) && activity.result?.success !== false && !activity.result?.error) for (const ref of [activity.callId, saved?.reference, activity.result?.outputRef].filter(Boolean)) this.recoveryEvidenceRefs.add(ref);
     if (member) {
       const item = { ...summary(activity), callId: activity.callId, studentId: activity.studentId, type: activity.type, status: activity.status, evidenceRef: saved?.reference, outputRef: activity.outputRef ?? activity.result?.outputRef, outputDigest: activity.result?.outputDigest };
       if (['started','spawned'].includes(activity.type)) member.inProgress.set(activity.callId, item);
@@ -336,6 +453,7 @@ export class ClassEngine extends EventEmitter {
     if ((member || activity.studentId === (this.teacher.id || 'teacher')) && activity.type === 'completed' && !['sleep', 'read_evidence', 'session_search', 'session_get', 'memory_search', 'memory_get', 'memory_propose', 'memory_assess'].includes(activity.action?.name) && !isPlanningTool(activity.action?.name)) {
       const key = digest({ action: activity.action, output: activity.result?.output ?? activity.output, outputDigest: activity.result?.outputDigest, exitCode: activity.result?.exitCode });
       for (const reference of [activity.callId, saved?.reference, activity.result?.outputRef, activity.outputRef].filter(Boolean)) this.evidenceIdentities.set(reference, key);
+      if (activity.result?.success !== false && activity.result?.executionStatus !== 'unknown' && !activity.result?.error && !(typeof activity.result?.exitCode === 'number' && activity.result.exitCode !== 0)) for (const reference of [activity.callId, saved?.reference, activity.result?.outputRef, activity.outputRef].filter(Boolean)) this.verifiedEvidenceRefs.add(reference);
       while (this.evidenceIdentities.size > 6000) this.evidenceIdentities.delete(this.evidenceIdentities.keys().next().value);
       if (!this.knownEvidence.has(key)) {
         this.knownEvidence.add(key); this.evidenceEpoch++;
@@ -356,10 +474,10 @@ export class ClassEngine extends EventEmitter {
     this.notify(); return saved;
   }
   launch(student) {
-    if (this.paused || this.life.signal.aborted || this.inflight.has(student.id) || this.finished || this.memberFailures.get(student.id)?.status === 'isolated') return;
+    if (this.userPaused || this.paused || this.life.signal.aborted || this.inflight.has(student.id) || this.finished || this.memberFailures.get(student.id)?.status === 'isolated') return;
     const generation = this.generation, ctx = this.context(student.id), execution = { ctx };
     this.inflight.set(student.id, execution);
-    execution.promise = Promise.resolve().then(() => student.solve(ctx)).then(async result => {
+    execution.promise = Promise.resolve().then(async () => { await ctx.checkpoint(); return student.solve(ctx); }).then(async result => {
       if (generation !== this.generation || this.life.signal.aborted || this.finished) return;
       if (!result || !['discovery', 'answer', 'continue'].includes(result.type) || typeof result.content !== 'string' || !result.content.trim()) throw new Error(`Invalid solve result from ${student.id}`);
       execution.recording = true;
@@ -382,6 +500,7 @@ export class ClassEngine extends EventEmitter {
       if (generation !== this.generation || this.life.signal.aborted || this.finished) return;
       if (result.type === 'answer') this.receiveCandidate(student.id, action);
       else if (result.type === 'discovery') { this.pending.push({ ...summary(action), submissionId: action.submissionId, evidenceRecordRef: action.evidenceRecordRef, studentId: student.id }); this.paused = true; }
+      await this.checkpoint('student_submission');
     }).catch(async error => {
       if (generation === this.generation && !this.life.signal.aborted && !this.finished) {
         try { await this.isolateMember(student, 'student', error); }
@@ -418,7 +537,7 @@ export class ClassEngine extends EventEmitter {
   }
   async pause() {
     this.paused = true; this.phaseChanged('pausing');
-    await interruptible(Promise.resolve().then(() => this.tools?.pauseAll?.()), this.life.signal);
+    await this.toolTransition(() => this.tools?.pauseAll?.());
   }
   async collectSubmissions() {
     // Wait only for already returned actions to finish saving their presentation
@@ -429,20 +548,27 @@ export class ClassEngine extends EventEmitter {
   async resume() {
     this.life.signal.throwIfAborted(); if (this.candidates.length || this.pending.length) return;
     this.phaseChanged('resuming');
-    await interruptible(Promise.resolve().then(() => this.tools?.resumeAll?.()), this.life.signal);
+    await this.toolTransition(async () => {
+      if (!this.userPaused) await this.tools?.resumeAll?.();
+      if (this.userPaused || this.candidates.length || this.pending.length) await this.tools?.pauseAll?.();
+    });
     this.life.signal.throwIfAborted();
     // A response can arrive while an OS resume command is in progress.
     if (this.candidates.length || this.pending.length) { await this.pause(); return; }
     this.paused = false; this.phaseChanged('solving'); this.record('solving.resumed', { feedbackVersion: this.feedbackVersion }); this.notify();
   }
   async vote(proposal, student) {
+    await this.waitForUserResume();
     if (this.memberFailures.has(student.id)) return { studentId: student.id, excluded: true, reason: 'member_isolated' };
     const controller = new AbortController(), parent = this.life.signal;
     const abort = () => controller.abort(cancelled(parent));
     parent.addEventListener('abort', abort, { once: true }); if (parent.aborted) abort();
     const timer = setTimeout(() => controller.abort(new Error('vote_timeout')), this.voteTimeoutMs);
     try {
-      const value = await interruptible(Promise.resolve().then(() => student.vote(copy(proposal), this.context(student.id, controller.signal, { gated: false }))), controller.signal);
+      const value = await interruptible(Promise.resolve().then(async () => {
+        await this.waitForUserResume(controller.signal);
+        return student.vote(copy(proposal), this.context(student.id, controller.signal, { gated: false }));
+      }), controller.signal);
       const approve = typeof value === 'boolean' ? value : value?.approve;
       if (typeof approve !== 'boolean') return { studentId: student.id, excluded: true, reason: 'invalid_vote' };
       if (this.memberFailures.has(student.id)) return { studentId: student.id, excluded: true, reason: 'member_isolated' };
@@ -467,6 +593,7 @@ export class ClassEngine extends EventEmitter {
     return merged.map(proposal => ({ ...copy(proposal), sources: discoveries.filter(item => proposal.proposerIds.includes(item.studentId)).map(copy) }));
   }
   addBoard(entry) {
+    this.workingDigest = taskDigest({ previous: this.workingDigest, blackboard: [entry], feedbackHistory: entry.type === 'teacher_feedback' ? [entry] : [] });
     this.blackboard.push(summary(entry));
     if (this.blackboard.length > 200) { this.blackboard.splice(0, this.blackboard.length - 200); this.blackboardOmitted++; }
   }
@@ -476,7 +603,7 @@ export class ClassEngine extends EventEmitter {
     await this.pause(); await this.delay(this.discoveryWindowMs); await this.collectSubmissions();
     // Candidate priority applies before a new merge/vote starts.
     if (this.candidates.length) return;
-    this.phaseChanged('discussing'); const discoveries = this.pending.splice(0);
+    this.phaseChanged('discussing'); const discoveries = this.pending.splice(0); this.activeDiscoveries = copy(discoveries);
     const ctx=this.context(this.teacher.id||'teacher',this.life.signal,{gated:false});
     const mergeId = `merge-${this.round}`, submissionIds = discoveries.map(item => item.submissionId).filter(Boolean);
     const mergeSnapshot = await this.archive({ kind: 'merge_snapshot', mergeId, round: this.round, submissionIds, discoveries });
@@ -513,6 +640,7 @@ export class ClassEngine extends EventEmitter {
       }
       this.addBoard(entry); this.record('discovery.decided', { ...entry, mergeId, submissionIds: proposal.sources.map(item => item.submissionId).filter(Boolean) });
     }
+    this.activeDiscoveries = []; await this.checkpoint('discussion_complete');
     if (!this.candidates.length && !this.pending.length) { await this.resume(); this.record('discussion.resumed'); }
   }
   async review() {
@@ -524,6 +652,7 @@ export class ClassEngine extends EventEmitter {
       if (candidate.feedbackVersion < this.feedbackVersion) { this.deferCandidate(candidate, 'stale_feedback'); return false; } return true;
     });
     if (!batch.length) { await this.resume(); return null; }
+    this.activeCandidates = copy(batch);
     this.reviewRound++; this.phaseChanged('reviewing'); await this.journal?.flush();
     const reviewId = `review-${this.reviewRound}`;
     const snapshot = {
@@ -557,17 +686,30 @@ export class ClassEngine extends EventEmitter {
     };
     await this.publishOutcome(reviewOutcome);
     const ctx = { ...this.context(this.teacher.id||'teacher', this.life.signal, { gated: false }), blackboard: snapshot.blackboard, reviewSnapshot: snapshot, histories: Object.fromEntries(snapshot.students.map(student => [student.studentId, student.history])), feedbackHistory: snapshot.feedbackHistory };
-    const judged = await this.teacherOperation(() => this.teacher.judge({ ...copy(batch[0]), candidates: copy(batch) }, ctx));
+    let judged = await this.teacherOperation(() => this.teacher.judge({ ...copy(batch[0]), candidates: copy(batch) }, ctx));
     this.life.signal.throwIfAborted(); if (typeof judged?.valid !== 'boolean') throw new Error('Invalid teacher judgement');
+    if (this.teacher.acceptanceRequired && judged.valid) {
+      for (const check of Array.isArray(judged.recoveryChecks) ? judged.recoveryChecks : []) {
+        if (check.status !== 'verified' || typeof check.reason !== 'string' || !check.reason.trim() || !Array.isArray(check.evidenceRefs) || !check.evidenceRefs.length || check.evidenceRefs.some(ref => !this.recoveryEvidenceRefs.has(ref))) continue;
+        const warning = this.resumeWarnings.find(item => item.callId === check.callId);
+        if (!warning) continue;
+        warning.resolved = true; warning.verification = copy(check);
+        this.evidence.get(warning.studentId)?.inProgress.delete(warning.callId);
+      }
+      const textReferences = new Set(['task:original', ...batch.flatMap(item => [item.submissionId, item.evidenceRecordRef, item.fullContentRef]).filter(Boolean)]);
+      const problems = checkAcceptance(this.acceptanceCriteria, judged, { evidence: this.verifiedEvidenceRefs, textReferences, inProgress: [...this.evidence.values()].some(item => [...item.inProgress.values()].some(operation => operation.status === 'needs_verification' || operation.executionStatus === 'unknown')) || this.resumeWarnings.some(item => !item.resolved) });
+      if (problems.length) judged = { ...judged, valid: false, report: [judged.report, '逐项验收未通过：', ...problems].join('\n'), gaps: [...(judged.gaps || []), ...problems] };
+    }
+    this.activeCandidates = [];
     const judgementRecord = await this.archive({ kind: 'review', reviewId, candidateIds, submissionIds, judgement: judged });
     this.life.signal.throwIfAborted();
     const reviewed = await this.publishOutcome({ ...reviewOutcome, status: judged.valid ? 'accepted' : 'rejected', evidenceRef: judgementRecord?.reference,
       content: judged.report || (judged.valid ? '老师验收通过。' : '老师验收未通过。'), report: judged.report, answer: judged.answer,
-      verifiedFacts: judged.verifiedFacts, gaps: judged.gaps, recommendations: judged.recommendations, evidenceRefs: judged.evidenceRefs });
+      verifiedFacts: judged.verifiedFacts, gaps: judged.gaps, recommendations: judged.recommendations, evidenceRefs: judged.evidenceRefs, criteriaResults: judged.criteriaResults });
     this.life.signal.throwIfAborted();
     for (const candidate of batch) if (candidate.submissionId) this.upsertOutcome({ id: candidate.submissionId, status: judged.valid ? 'accepted' : 'rejected', reviewId, reviewRound: this.reviewRound });
     if (judged.valid) {
-      this.acceptedReview = { reviewId, reviewRound: this.reviewRound, candidateIds, submissionIds, evidenceRef: judgementRecord?.reference, reviewFullContentRef: reviewed.fullContentRef };
+      this.acceptedReview = { reviewId, reviewRound: this.reviewRound, candidateIds, submissionIds, evidenceRef: judgementRecord?.reference, reviewFullContentRef: reviewed.fullContentRef, criteriaResults: judged.criteriaResults };
       this.record('review.passed', { ...this.acceptedReview }); await this.journal?.flush(); this.life.signal.throwIfAborted();
       return { status: 'completed', reason: 'answer_valid', answer: judged.answer ?? batch[0].content, report: judged.report ?? null };
     }
@@ -585,7 +727,7 @@ export class ClassEngine extends EventEmitter {
     this.record('review.rejected', { reviewId, reviewRound: this.reviewRound, candidateIds, submissionIds, evidenceRef: judgementRecord?.reference, fullContentRef: reviewed.fullContentRef, reason: entry.report });
     this.record('feedback.published', { entry, feedbackVersion: this.feedbackVersion, reviewRound: this.reviewRound }); await this.journal?.flush();
     for (const candidate of this.candidates.splice(0)) this.deferCandidate(candidate, 'stale_feedback');
-    await this.resume(); return null;
+    await this.checkpoint('review_feedback'); await this.resume(); return null;
   }
   async stopTools() {
     if (!this.stoppingTools) this.stoppingTools = Promise.all([this.tools, this.teacherTools].filter(Boolean).map(manager => manager.stopAll?.()));
@@ -598,18 +740,29 @@ export class ClassEngine extends EventEmitter {
       events: [], eventSequence: 0, blackboard: [], blackboardOmitted: 0, outcomes: [], outcomesOmitted: 0, pending: [], candidates: [],
       histories: new Map(this.students.map(student => [student.id, []])), inflight: new Map(), waiters: new Set(),
       memberFailures: new Map(), memberRetries: new Set(), recoveryVersions: new Map(), presentationWrites: new Set(), publicProgressSequence: 0,
-      evidence: new Map(this.students.map(student => [student.id, { tools: [], inProgress: new Map(), totalTools: 0 }])),
+      evidence: new Map([...this.students, this.teacher].map(student => [student.id || 'teacher', { tools: [], inProgress: new Map(), totalTools: 0 }])),
       feedbackHistory: [], feedbackVersion: 0, feedbackDelivered: new Map(), submissionFeedback: new Map(),
       rejectedEvidence: new Map(), knownEvidence: new Set(), evidenceIdentities: new Map(), evidenceEpoch: 0,
-      fault: null, paused: false, round: 0, reviewRound: 0, phaseId: 0, candidateSequence: 0, discoverySequence: 0, submissionSequence: 0, acceptedReview: null,
+      fault: null, paused: false, userPaused: false, userPauseRevision: 0, toolTransitions: Promise.resolve(), round: 0, reviewRound: 0, phaseId: 0, candidateSequence: 0, discoverySequence: 0, submissionSequence: 0, acceptedReview: null,
       stoppingTools: null, finished: false, stopRequested: false, stopReason: null
     });
+    this.terminalStatus = null; this.acceptanceCriteria = []; this.verifiedEvidenceRefs = new Set(); this.recoveryEvidenceRefs = new Set(); this.workingDigest = taskDigest(); this.resumeWarnings = []; this.activeCandidates = []; this.activeDiscoveries = [];
     this.configureTools();
     const deadline = this.taskTimeoutMs === null ? undefined : setTimeout(() => this.fail(new Error('task_timeout')), this.taskTimeoutMs);
     let outcome = null;
     try {
+      if (this.resumeState) { this.importState(this.resumeState, true); this.resumeState = null; this.record('task.resumed', { warnings: this.resumeWarnings }); }
+      if (this.teacher.acceptanceRequired && !this.acceptanceCriteria.length) {
+        if (typeof this.teacher.extractCriteria !== 'function') throw Error('老师未提供逐条件验收定义能力。');
+        this.phaseChanged('preparing');
+        this.acceptanceCriteria = normalizeCriteria(await this.teacherOperation(() => this.teacher.extractCriteria(copy(this.task), this.context(this.teacher.id || 'teacher', this.life.signal, { gated: false }))));
+        await this.archive({ kind: 'acceptance_criteria', criteria: this.acceptanceCriteria });
+        this.record('acceptance.defined', { criteria: this.acceptanceCriteria });
+      }
       this.record('task.started', { studentIds: this.students.map(student => student.id) }); this.phaseChanged('solving');
+      await this.checkpoint('task_ready');
       while (!outcome) {
+        await this.waitForUserResume();
         this.life.signal.throwIfAborted(); if (this.fault) throw this.fault;
         if (this.candidates.length) { outcome = await this.review(); continue; }
         if (this.pending.length) { await this.discuss(); continue; }
@@ -622,12 +775,12 @@ export class ClassEngine extends EventEmitter {
         if (!this.paused) this.students.forEach(student => this.launch(student));
         await this.wait(); await this.delay(5); await this.journal?.flush();
       }
-      await this.journal?.flush(); this.life.signal.throwIfAborted();
+      await this.journal?.flush(); await this.waitForUserResume(); this.life.signal.throwIfAborted();
     } catch (error) {
       const failure=this.fault||error;
       outcome = { status: this.stopRequested && !this.fault ? 'stopped' : 'failed', reason: String(failure?.message || error), answer: null, report: null,...(['TOOL_ARGUMENT_REPAIR_EXHAUSTED','TOOL_CALL_PROTOCOL_INVALID'].includes(failure?.code)?{errorCode:failure.code,studentId:failure.studentId,toolName:failure.toolName}:{}) };
     } finally {
-      clearTimeout(deadline); this.life.abort(new Error('task_finished')); this.paused = false; this.notify();
+      clearTimeout(deadline); this.life.abort(new Error('task_finished')); this.paused = false; this.userPaused = false; this.notify();
       try { await this.stopTools(); }
       catch (error) { outcome = { ...outcome, status: 'failed', reason: `${outcome?.reason || 'task_finished'}; ${error.message}` }; }
       // A returned solve may still be syncing its full text. Drain only those
@@ -643,6 +796,7 @@ export class ClassEngine extends EventEmitter {
     // Emit a single terminal event after cleanup; late callbacks are inert.
     if (this.stopRequested && outcome.status === 'completed') outcome = { status: 'stopped', reason: this.stopReason, answer: null, report: null };
     this.finished = true;
+    this.terminalStatus = outcome.status;
     if (outcome.status === 'completed') {
       try {
         const final = await this.publishOutcome({ id: 'final-answer', type: 'final_answer', status: 'accepted', validated: true,
@@ -656,6 +810,8 @@ export class ClassEngine extends EventEmitter {
     this.record('task.finished', { status: outcome.status, reason: outcome.reason,...(outcome.errorCode?{errorCode:outcome.errorCode}:{}) });
     try { await this.journal?.flush(); }
     catch (error) { outcome = { ...outcome, status: 'failed', reason: `storage_error: ${error.message}` }; }
+    try { this.terminalStatus = outcome.status; await this.checkpoint('task_finished'); }
+    catch (error) { outcome = { ...outcome, status: 'failed', reason: error.message }; }
     this.running = false; for (const { manager, previous } of this.toolHooks) Object.assign(manager, previous);
     return { ...outcome, phase: outcome.status, memberFailures: this.getMemberFailures(), reviewRound: this.reviewRound, feedbackVersion: this.feedbackVersion, feedbackDelivered: Object.fromEntries(this.feedbackDelivered), blackboard: copy(this.blackboard), blackboardOmitted: this.blackboardOmitted, outcomes: copy(this.outcomes), outcomesOmitted: this.outcomesOmitted, events: copy(this.events), eventsDropped: Math.max(0, this.eventSequence - this.events.length) };
   }

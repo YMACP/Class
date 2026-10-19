@@ -60,6 +60,7 @@ try {
   const result = spawnSync(compiler, [
     'build', path.join(root, 'src', 'desktop.js'),
     '--compile', '--target=bun-windows-x64-baseline', '--outfile', compiledOutput,
+    '--define', 'CLASS_DESKTOP_COMPILED=true', '--define', `CLASS_DESKTOP_VERSION=${JSON.stringify(packageInfo.version)}`,
     '--no-compile-autoload-dotenv', '--no-compile-autoload-bunfig',
     '--windows-hide-console',
     '--windows-title=Class', `--windows-version=${packageInfo.version}.0`,

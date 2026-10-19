@@ -11,6 +11,10 @@ import { BrowserTools } from './browser-tools.js';
 import { executeMediaTool, mediaToolDefinitions, retainToolMedia, summarizeToolResult } from './media-tools.js';
 import { executePlanningTool, planningToolDefinitions } from './planning-tools.js';
 import { executeMemoryTool, isMemoryTool } from './memory-tools.js';
+import { ExtensionRuntime } from './extensions.js';
+import { createMcpPreparer } from './mcp-preparation.js';
+import { activeTimeout } from './tool-output.js';
+import { captureLinuxProcessIdentity, snapshotLinuxDescendants, killLinuxDescendants } from './owned-linux-processes.js';
 
 const fileTools = new Set(fileToolDefinitions.map(tool => tool.name));
 const webTools = new Set(webToolDefinitions.map(tool => tool.name));
@@ -161,8 +165,8 @@ async function suspendChild(child, resume = false) {
 /** Tools use a shared suspension gate. run_command controls its foreground
  * process tree. Background/detached work is outside the supported contract. */
 export class ToolManager {
-  constructor({ cwd = process.cwd(), allowShell = false, maxOutputBytes = 65536, onActivity, evidenceReader, createOutputArtifact, planningState = new Map(), webOptions = {}, browserOptions = {}, memory } = {}) {
-    this.cwd = path.resolve(cwd); this.allowShell = allowShell;
+  constructor({ cwd = process.cwd(), workspaceRoot = cwd, allowShell = false, maxOutputBytes = 65536, onActivity, evidenceReader, createOutputArtifact, planningState = new Map(), webOptions = {}, browserOptions = {}, memory, extensionConfig, extensionSecrets, extensionOptions = {} } = {}) {
+    this.cwd = path.resolve(cwd); this.workspaceRoot = path.resolve(workspaceRoot); this.allowShell = allowShell;
     if (!Number.isSafeInteger(maxOutputBytes) || maxOutputBytes < 1) throw new Error("maxOutputBytes must be a positive integer");
     this.maxOutputBytes = maxOutputBytes; this.pauseVersion = 0;
     this.paused = false; this.stopped = false; this.events = new EventEmitter();
@@ -177,6 +181,65 @@ export class ToolManager {
     this.availableShells = process.platform === 'win32' ? ['powershell'] : [];
     this.defaultShell = process.platform === 'win32' ? 'powershell' : 'bash';
     this.shellExecutables = process.platform === 'win32' ? { powershell: powerShell() } : {};
+    const preparer = extensionOptions.autoPrepare && extensionOptions.cacheDir && this.allowShell
+      ? createMcpPreparer({ cacheDir: extensionOptions.cacheDir, env: { ...process.env }, startTimer: (ms, callback) => activeTimeout(this, ms, callback), run: (command, args, options) => this.runExtensionSetup(command, args, options) }) : undefined;
+    this.extensions = new ExtensionRuntime(this, { ...extensionOptions, ...(preparer ? { prepareMcp: (server, options) => preparer.prepare(server, options) } : {}), config: extensionConfig, secrets: extensionSecrets, environment: childEnvironment(), spawnProcess: async (command, args, options) => {
+      await this.checkpoint(this.controller.signal);
+      const { classBrowserMcp = false, classAnalysisMcp = false, ...spawnOptions } = options;
+      const child = spawn(command, args, { ...spawnOptions, shell: false, detached: process.platform !== 'win32' });
+      // Install stream error handlers before adoption can await Windows identity.
+      child.stdin.on('error', () => {}); child.stdout.on('error', () => {}); child.stderr.on('error', () => {});
+      const record = await this.adoptProcess(child, 'extension', { classBrowserMcp, classAnalysisMcp });
+      return { child, stop: async () => { await this._kill(record); await record.closed; } };
+    } });
+  }
+  async runExtensionSetup(command, args, { cwd, env = {}, signal, timeoutMs = 120000 } = {}) {
+    if (!this.allowShell) throw Error('当前任务未允许准备本地MCP环境');
+    signal = this._signal(signal); await this.checkpoint(signal);
+    // Recipe arguments are arrays and never evaluated by a shell. Installers
+    // join the same owned process tree and pause/stop gate as ordinary tools.
+    const child = spawn(command, args, { cwd, env, shell: false, detached: process.platform !== 'win32', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '', stderr = '', spawnError, expired = false;
+    child.on('error', error => { spawnError = error; });
+    child.stdout.on('error', () => {}); child.stderr.on('error', () => {});
+    child.stdout.on('data', data => { if (stdout.length < 32768) stdout += data.toString().slice(0, 32768 - stdout.length); });
+    child.stderr.on('data', data => { if (stderr.length < 32768) stderr += data.toString().slice(0, 32768 - stderr.length); });
+    const adoption = this.adoptProcess(child, 'extension-setup');
+    const record = [...this.children].find(entry => entry.child === child);
+    const stop = () => { void this._kill(record).catch(() => {}); };
+    const timer = activeTimeout(this, Math.max(100, Math.min(timeoutMs, 300000)), () => { expired = true; stop(); });
+    signal.addEventListener('abort', stop, { once: true }); if (signal.aborted) stop();
+    try {
+      await adoption;
+      const closed = await record.closed;
+      signal.throwIfAborted();
+      if (expired) throw Error('MCP环境准备超时');
+      if (spawnError) throw spawnError;
+      await this.checkpoint(signal);
+      return { exitCode: closed.code ?? -1, stdout, stderr };
+    } finally {
+      timer(); signal.removeEventListener('abort', stop);
+      if (child.exitCode === null && child.signalCode === null) await this._kill(record);
+      await record.closed;
+    }
+  }
+  definitionsFor(agentId, options = {}) { return toolDefinitions(this, { ...options, agentId }); }
+  exportState() { return { version: 1, planning: structuredClone([...this.planningState]), extensions: this.extensions.exportState() }; }
+  importState(value) {
+    if (value?.version !== 1) return;
+    this.planningState.clear();
+    if (Array.isArray(value.planning)) for (const entry of value.planning.slice(0, 129)) {
+      if (!Array.isArray(entry) || typeof entry[0] !== 'string' || !entry[1] || typeof entry[1] !== 'object') continue;
+      const [member, state] = entry;
+      if (typeof state.plan !== 'string' || state.plan.length > 16000 || !Array.isArray(state.todos) || state.todos.length > 100 || !Number.isSafeInteger(state.revision) || state.revision < 0) continue;
+      const ids = new Set();
+      if (state.todos.some(item => !item || typeof item.id !== 'string' || !item.id || item.id.length > 100 || ids.has(item.id) || !ids.add(item.id) || typeof item.content !== 'string' || !item.content || item.content.length > 2000 || !['pending', 'in_progress', 'completed', 'blocked'].includes(item.status))) continue;
+      this.planningState.set(member, { member, plan: state.plan, todos: state.todos.map(({ id, content, status }) => ({ id, content, status })), revision: state.revision });
+    }
+    this.extensions.importState(value.extensions);
+    // A fresh manager normally has not prepared; resetting the preparation gate
+    // also makes explicit in-memory restore discover schemas before model use.
+    this.preparing = undefined;
   }
   prepare({ signal } = {}) {
     if (!this.preparing) this.preparing = this._prepare(this._signal(signal));
@@ -184,6 +247,7 @@ export class ToolManager {
   }
   async _prepare(signal) {
     signal.throwIfAborted();
+    await this.extensions.restore(signal);
     if (!this.allowShell) return this;
     const candidates = [];
     if (process.platform === 'win32') {
@@ -233,11 +297,17 @@ export class ToolManager {
     });
   }
   async _path(value = '.') {
-    const base = await fs.realpath(this.cwd);
-    const candidate = await fs.realpath(path.resolve(base, value));
+    const base = await fs.realpath(this.workspaceRoot);
+    const candidate = await fs.realpath(path.resolve(this.cwd, value));
     const relative = path.relative(base, candidate);
     if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error('Tool path escapes workspace');
+    await this.assertTaskPath(base,candidate);
     return candidate;
+  }
+  async assertTaskPath(base,target) {
+    const parts=value=>path.relative(base,value).split(path.sep).map(part=>process.platform==='win32'?part.toLowerCase():part);
+    const own=parts(await fs.realpath(this.cwd)),other=parts(target);
+    if(own[0]==='.class-runs'&&own[1]&&other[0]==='.class-runs'&&other[1]!==own[1])throw new Error('Another task workspace is not available to this task');
   }
   execute(studentId, action, options = {}) {
     const execution = this._executeManaged(studentId, action, options);
@@ -248,14 +318,14 @@ export class ToolManager {
   async _executeManaged(studentId, { name, args = {} }, { signal, metadata = {} } = {}) {
     signal = this._signal(signal); await this.checkpoint(signal);
     await this.prepare({ signal });
-    ({ name, args } = inspectToolCall(name, args, { definitions: toolDefinitions(this, { includeLegacy: true }) }));
+    ({ name, args } = inspectToolCall(name, args, { definitions: toolDefinitions(this, { includeLegacy: true, agentId: studentId }) }));
     const callId = randomUUID(), startedAt = new Date().toISOString();
     const activity = { callId, studentId, action: { name, args }, startedAt, metadata };
     await this._activity({ ...activity, type: 'started', status: 'started', timestamp: startedAt });
     let result, artifact, outputArtifact;
     try {
       signal.throwIfAborted();
-      if (['shell', 'run_command', 'read_file'].includes(name) && this.createOutputArtifact) {
+      if ((['shell', 'run_command', 'read_file'].includes(name) || this.extensions.owns(name)) && this.createOutputArtifact) {
         try { artifact = await this.createOutputArtifact(activity); }
         catch (error) { throw storageError(error); }
       }
@@ -294,6 +364,7 @@ export class ToolManager {
     catch (error) { throw storageError(error); }
   }
   async _execute(studentId, name, args, signal, metadata, artifact, activity) {
+    if (this.extensions.owns(name)) return this.extensions.execute(studentId, name, args, signal, artifact);
     if (fileTools.has(name)) return executeFileTool(this, studentId, name, args, signal);
     if (webTools.has(name)) return executeWebTool(this, studentId, name, args, signal);
     if (mediaTools.has(name)) return executeMediaTool(this, studentId, name, args, signal);
@@ -450,8 +521,8 @@ export class ToolManager {
     if (inputFailure && inputFailure.code !== 'EPIPE') { inputFailure.executionStatus = cancelledDuringExecution ? 'cancelled' : child.pid ? 'unknown' : 'not_started'; throw inputFailure; }
     return { name, ...(shell ? { shell } : {}), output: Buffer.concat(chunks).toString('utf8'), truncated, exitCode: code, signal: sig, success: !cancelledDuringExecution && code === 0 && !sig, executionStatus: cancelledDuringExecution ? 'cancelled' : code === null ? 'unknown' : 'completed' };
   }
-  async adoptProcess(child, studentId) {
-    const record = { child, studentId, suspended: false, controlledTree: true, members: [] };
+  async adoptProcess(child, studentId, { classBrowserMcp = false, classAnalysisMcp = false } = {}) {
+    const record = { child, studentId, suspended: false, controlledTree: true, members: [], classBrowserMcp, classAnalysisMcp };
     this.children.add(record);
     let resolveClosed;
     record.closed = new Promise(resolve => { resolveClosed = resolve; });
@@ -459,13 +530,18 @@ export class ToolManager {
     record.identityReady = (async () => {
       if (!child.pid) await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
       if (process.platform === 'win32') record.identity = await captureProcessIdentity(child);
+      else if (process.platform === 'linux' && (classBrowserMcp || classAnalysisMcp)) {
+        const identity = await captureLinuxProcessIdentity(child.pid);
+        if (identity && identity.parentPid !== process.pid) throw Error('Local MCP process ownership changed');
+        record.linuxIdentity = identity;
+      }
     })();
     try {
       await record.identityReady;
       if (this.stopped) { await this._kill(record); throw Error('Tools stopped'); }
       // A browser can finish spawning during an existing pause; join that pause
       // before permitting the first navigation or page action.
-      if (this.paused) await this.pauseAll();
+      if (this.paused && !classBrowserMcp && !classAnalysisMcp) await this.pauseAll();
       return record;
     } catch (error) {
       if (child.exitCode === null && child.signalCode === null) await this._kill(record);
@@ -479,13 +555,16 @@ export class ToolManager {
     this.browserTools.pauseAll();
     return this._serialized(async () => {
       if (this.stopped) return;
-      for (const record of this.children) if (!record.suspended) {
+      for (const record of this.children) if (!record.suspended && !record.classBrowserMcp && !record.classAnalysisMcp) {
         if (record.controlledTree) {
           if (process.platform === 'win32') await controlProcessTree(record, 'pause');
           else if (record.child.exitCode === null && record.child.signalCode === null) process.kill(-record.child.pid, 'SIGSTOP');
         } else await suspendChild(record.child);
         record.suspended = true;
       }
+      // Class-owned MCP servers stay responsive to cancellation and EOF.
+      // They pause their own process trees through the same ownership logic.
+      await this.extensions.pauseAll();
     });
   }
   resumeAll() {
@@ -499,6 +578,7 @@ export class ToolManager {
         } else await suspendChild(record.child, true);
         record.suspended = false;
       }
+      await this.extensions.resumeAll();
       if (this.pauseVersion === version) { this.paused = false; this.browserTools.resumeAll(); this.events.emit('change'); }
     });
   }
@@ -509,16 +589,50 @@ export class ToolManager {
   async _killChild(record) {
     const child = record.child;
     if (!child.pid) return;
+    let linuxCleanupError;
+    if ((record.classBrowserMcp || record.classAnalysisMcp) && child.exitCode === null && child.signalCode === null) {
+      // Detached tool/browser groups belong to the server. Let it reap them
+      // and remove temporary data before applying the normal fallback.
+      await record.identityReady.catch(() => {});
+      let descendants = [], snapshotError;
+      if (record.linuxIdentity) {
+        try { descendants = await snapshotLinuxDescendants(record.linuxIdentity); }
+        catch (error) { snapshotError = error; }
+      }
+      child.stdin.end();
+      let timer, exited;
+      try {
+        exited = await Promise.race([record.closed, new Promise(resolve => { timer = setTimeout(() => resolve(null), 25000); })]);
+      } finally { clearTimeout(timer); }
+      if (exited) {
+        if (record.linuxIdentity && (exited.code !== 0 || exited.signal)) {
+          await killLinuxDescendants(descendants);
+          if (snapshotError) throw snapshotError;
+        }
+        return;
+      }
+      if (record.linuxIdentity) {
+        // Capture launches that overlapped EOF before killing the server group.
+        // Detached browser groups are cleaned by PID plus verified starttime,
+        // never by executable name or an unverified process-group identifier.
+        try { descendants.push(...await snapshotLinuxDescendants(record.linuxIdentity)); }
+        catch (error) { snapshotError ||= error; }
+        const unique = [...new Map(descendants.map(item => [item.pid + ':' + item.startTime, item])).values()];
+        try { await killLinuxDescendants(unique); } catch (error) { linuxCleanupError = error; }
+        linuxCleanupError ||= snapshotError;
+      }
+    }
     if (record.controlledTree && process.platform === 'win32') {
       try { await record.identityReady; } catch { /* Failed identification still requires cleanup of this owned child. */ }
       if (record.identity) { await controlProcessTree(record, 'stop'); return; }
     }
-    if (child.exitCode !== null || child.signalCode !== null) return;
+    if (child.exitCode !== null || child.signalCode !== null) { if (linuxCleanupError) throw linuxCleanupError; return; }
     if (process.platform === 'win32') {
       try { await runProcess('taskkill.exe', ['/PID', String(child.pid), '/T', '/F']); }
       catch (error) { if (child.exitCode === null && child.signalCode === null) { child.kill('SIGKILL'); throw error; } }
     } else if (record.controlledTree) process.kill(-child.pid, 'SIGKILL');
     else child.kill('SIGKILL');
+    if (linuxCleanupError) throw linuxCleanupError;
   }
   async stopAll() {
     this.stopped = true;
@@ -528,6 +642,7 @@ export class ToolManager {
     const records = [...this.children];
     await Promise.all(records.map(async r => { await this._kill(r); await r.closed; }));
     await this.browserTools.stopAll();
+    await this.extensions.stopAll();
     const settled = await Promise.allSettled([...this.activeExecutions]);
     const storageFailure = settled.find(result => result.status === 'rejected' && result.reason?.fatalStorage);
     if (storageFailure) throw storageFailure.reason;

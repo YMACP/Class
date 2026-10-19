@@ -374,6 +374,11 @@ export class BrowserTools {
         '--headless', '--no-remote', '--profile', profile, '--remote-debugging-port', '0', 'about:blank',
       ] : [
         '--headless=new', '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0', `--user-data-dir=${profile}`,
+        // Chromium exempts automation from Windows' automatic de-elevation
+        // relaunch. Keep the spawned process owned by ToolManager so startup,
+        // pause and shutdown all control the same tree. This does not elevate
+        // Class or disable the browser sandbox.
+        ...(process.platform === 'win32' ? ['--enable-automation'] : []),
         '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-component-update', '--disable-sync',
         '--disable-default-apps', '--disable-extensions', '--disable-features=Translate,MediaRouter,OptimizationHints', '--password-store=basic', '--use-mock-keychain',
         '--window-size=1280,720', 'about:blank',
@@ -424,7 +429,16 @@ export class BrowserTools {
     let stat;
     try { stat = await fs.lstat(session.profile); } catch (error) { if (error.code === 'ENOENT') { this.profiles.delete(session.profile); return; } throw error; }
     if (stat.isSymbolicLink() || !stat.isDirectory() || await fs.realpath(session.profile) !== session.profile) throw new Error('Browser profile ownership changed');
-    await fs.rm(session.profile, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 });
+    // Node retries each nested directory separately. A locked descendant can
+    // multiply retries across the tree and keep shutdown busy for minutes.
+    // Retry the whole owned profile a bounded number of times instead.
+    for (let attempt = 0; ; attempt++) {
+      try { await fs.rm(session.profile, { recursive: true, force: true, maxRetries: 0 }); break; }
+      catch (error) {
+        if (attempt >= 2 || !['EBUSY', 'EPERM', 'ENOTEMPTY', 'EACCES'].includes(error.code)) throw error;
+        await delay(150 * (attempt + 1));
+      }
+    }
     this.profiles.delete(session.profile);
   }
   async _closeSession(studentId) {

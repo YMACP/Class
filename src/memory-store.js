@@ -32,6 +32,7 @@ function paged(items, total, paging) {
 function parse(value, fallback) { try { return JSON.parse(value); } catch { return fallback; } }
 function memoryKind(kind) { return ['project', 'role', 'skill'].includes(kind) ? 'agent' : kind; }
 function contentHash(content) { return createHash('sha256').update(content.replace(/\s+/gu, ' ').trim()).digest('hex'); }
+function sourceHash(record) { return createHash('sha256').update(JSON.stringify([record.text, record.agent_id, record.role, record.kind, record.shared])).digest('hex'); }
 function splitText(text) {
   if (!text) return [''];
   const chunks = [];
@@ -92,7 +93,7 @@ export async function createMemoryStore({ directory, secrets = [] } = {}) {
     const { DatabaseSync } = await import('node:sqlite');
     database = new DatabaseSync(filename);
   }
-  let closed = false, secretSource = secrets;
+  let closed = false, secretSource = secrets, transactionDepth = 0;
   function statement(sql, values, method) {
     const prepared = database.prepare(sql);
     try { return prepared[method](...values); }
@@ -102,9 +103,14 @@ export async function createMemoryStore({ directory, secrets = [] } = {}) {
   const get = (sql, values = []) => statement(sql, values, 'get');
   const run = (sql, values = []) => statement(sql, values, 'run');
   function transaction(action) {
+    // Extraction commits its notes and source receipts as one unit. Individual
+    // memory writes remain transactional when called outside that unit.
+    if (transactionDepth) return action();
     database.exec('BEGIN IMMEDIATE');
+    transactionDepth++;
     try { const result = action(); database.exec('COMMIT'); return result; }
     catch (error) { try { database.exec('ROLLBACK'); } catch {} throw error; }
+    finally { transactionDepth--; }
   }
   function redactString(value) {
     let text = String(value);
@@ -244,6 +250,8 @@ export async function createMemoryStore({ directory, secrets = [] } = {}) {
       CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY,reference TEXT NOT NULL UNIQUE,base_reference TEXT NOT NULL,session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,project_id TEXT NOT NULL,sequence INTEGER NOT NULL,agent_id TEXT NOT NULL,role TEXT NOT NULL,kind TEXT NOT NULL,timestamp TEXT NOT NULL,text TEXT NOT NULL,payload_json TEXT NOT NULL,shared INTEGER NOT NULL DEFAULT 0,chunk_index INTEGER NOT NULL,chunk_count INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS records_scope ON records(project_id,agent_id,session_id,sequence);
       CREATE INDEX IF NOT EXISTS records_base ON records(session_id,base_reference);
+      CREATE TABLE IF NOT EXISTS memory_extraction_progress(reference TEXT PRIMARY KEY,session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,source_hash TEXT NOT NULL,sequence INTEGER NOT NULL,chunk_index INTEGER NOT NULL,processed_at TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS memory_extraction_session ON memory_extraction_progress(session_id);
       CREATE TABLE IF NOT EXISTS memories(id TEXT PRIMARY KEY,project_id TEXT NOT NULL,agent_id TEXT,kind TEXT NOT NULL,category TEXT NOT NULL,content TEXT NOT NULL,status TEXT NOT NULL,source_refs_json TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,last_verified_at TEXT,expires_at TEXT);
       CREATE INDEX IF NOT EXISTS memories_scope ON memories(project_id,agent_id,status);
       CREATE TABLE IF NOT EXISTS tombstones(type TEXT NOT NULL,id TEXT NOT NULL,project_id TEXT NOT NULL,deleted_at TEXT NOT NULL,PRIMARY KEY(type,id));
@@ -253,6 +261,8 @@ export async function createMemoryStore({ directory, secrets = [] } = {}) {
     const version = get("SELECT value FROM memory_meta WHERE key='schema_version'");
     if (version && ![1, 2, SCHEMA_VERSION].includes(Number(version.value))) throw new Error('Unsupported memory database version');
     transaction(() => {
+      if (!all('PRAGMA table_info(records)').some(column => column.name === 'source_hash')) database.exec("ALTER TABLE records ADD COLUMN source_hash TEXT NOT NULL DEFAULT ''");
+      for (const row of all("SELECT id,text,agent_id,role,kind,shared FROM records WHERE source_hash=''")) run('UPDATE records SET source_hash=? WHERE id=?', [sourceHash(row), row.id]);
       const columns = new Set(all('PRAGMA table_info(memories)').map(column => column.name));
       for (const [name, definition] of [['content_hash', "TEXT NOT NULL DEFAULT ''"], ['review_reason', 'TEXT'], ['reviewed_at', 'TEXT'], ['review_verdict', 'TEXT'], ['review_source_refs_json', "TEXT NOT NULL DEFAULT '[]'"], ['duplicate_of', 'TEXT']]) {
         if (!columns.has(name)) database.exec(`ALTER TABLE memories ADD COLUMN ${name} ${definition}`);
@@ -358,13 +368,62 @@ export async function createMemoryStore({ directory, secrets = [] } = {}) {
             const reference = chunks.length > 1 ? `${baseReference}#${chunkIndex + 1}` : baseReference;
             const collision = get('SELECT session_id FROM records WHERE id = ? OR reference = ?', [id, reference]);
             if (collision) throw new Error('Memory record identity already belongs to another record');
-            run('INSERT INTO records VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [id, reference, baseReference, sessionId, session.project_id, sequence, agentId, role, kind, timestamp, chunk, chunkIndex === 0 ? payload : '{}', value.shared === true ? 1 : 0, chunkIndex, chunks.length]);
+            const shared = value.shared === true ? 1 : 0;
+            run('INSERT INTO records VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [id, reference, baseReference, sessionId, session.project_id, sequence, agentId, role, kind, timestamp, chunk, chunkIndex === 0 ? payload : '{}', shared, chunkIndex, chunks.length, sourceHash({ text: chunk, agent_id: agentId, role, kind, shared })]);
             run('INSERT INTO records_fts(id,search_text) VALUES(?,?)', [id, indexed(`${chunk}\n${chunkIndex === 0 ? payload : ''}`)]);
             result.records.push({ id, reference });
           }
           if (existing.length) result.updated++; else result.inserted++;
         }
         return result;
+      });
+    },
+    extractionBatch(sessionId, context) {
+      if (!contextOf(context).admin) throw new Error('Only an administrator can organize memory sources');
+      const session = get('SELECT * FROM sessions WHERE id=?', [required(sessionId, 'session id')]);
+      if (!session || tombstoned('session', sessionId)) return null;
+      const rows = all(`SELECT r.* FROM records r LEFT JOIN memory_extraction_progress p ON p.reference=r.reference AND p.source_hash=r.source_hash
+        WHERE r.session_id=? AND (r.shared=1 OR r.role='user') AND p.reference IS NULL
+        ORDER BY r.sequence,r.base_reference,r.chunk_index,r.id LIMIT 200`, [sessionId]);
+      const items = []; let characters = 0;
+      for (const row of rows) {
+        if (items.length && characters + row.text.length > 48000) break;
+        items.push({ reference: row.reference, content: redactString(row.text), sourceHash: row.source_hash, sequence: row.sequence, chunkIndex: row.chunk_index, agentId: null });
+        characters += row.text.length;
+      }
+      return { session: sessionObject(session), items };
+    },
+    commitExtraction({ sessionId, sources, memories }, context) {
+      const ctx = contextOf(context);
+      if (!ctx.admin || !ctx.automatic) throw new Error('Only automatic memory extraction can commit source receipts');
+      if (!Array.isArray(sources) || !sources.length || sources.length > 200 || !Array.isArray(memories) || memories.length > 12) throw new Error('Invalid extraction batch');
+      return transaction(() => {
+        const session = get('SELECT * FROM sessions WHERE id=?', [sessionId]);
+        if (!session || tombstoned('session', sessionId)) throw new Error('Memory source session was deleted');
+        const valid = new Set();
+        for (const source of sources) {
+          const record = get('SELECT * FROM records WHERE session_id=? AND reference=?', [sessionId, source.reference]);
+          if (!record || record.source_hash !== source.sourceHash || !(record.shared === 1 || record.role === 'user')) throw new Error('Memory source changed during extraction');
+          valid.add(source.reference);
+        }
+        const saved = []; let skipped = 0;
+        for (const value of memories) {
+          if (!value || !['user', 'agent'].includes(value.kind) || typeof value.content !== 'string' || !value.content.trim() || !Array.isArray(value.sourceRefs) || !value.sourceRefs.length || value.sourceRefs.some(ref => !valid.has(ref))) { skipped++; continue; }
+          try {
+            saved.push(store.saveMemory({ kind: value.kind, agentId: null, category: ['fact', 'preference', 'experience'].includes(value.category) ? value.category : 'inference', projectId: session.project_id,
+              content: value.content.slice(0, 12000), sourceRefs: value.sourceRefs, status: 'active', ...(value.expiresAt ? { expiresAt: value.expiresAt } : {}) }, ctx).id);
+          } catch (error) {
+            if (!/Deleted memory|Memory source|Memory sharing|source chain|Automatic memory writes|Invalid memory (timestamp|content|source)/.test(error.message)) throw error;
+            skipped++;
+          }
+        }
+        const now = new Date().toISOString();
+        for (const source of sources) run(`INSERT INTO memory_extraction_progress VALUES(?,?,?,?,?,?) ON CONFLICT(reference) DO UPDATE SET source_hash=excluded.source_hash,sequence=excluded.sequence,chunk_index=excluded.chunk_index,processed_at=excluded.processed_at`, [source.reference, sessionId, source.sourceHash, source.sequence, source.chunkIndex, now]);
+        const last = sources.at(-1), metadata = parse(session.metadata_json, {});
+        metadata.memoryExtraction = { version: 1, sequence: last.sequence, reference: last.reference, chunkIndex: last.chunkIndex, processedAt: now };
+        delete metadata.memoryExtractedAt;
+        run('UPDATE sessions SET metadata_json=? WHERE id=?', [JSON.stringify(metadata), sessionId]);
+        return { memoryIds: [...new Set(saved)], skipped, processed: sources.length, cursor: metadata.memoryExtraction };
       });
     },
     sessionSearch(args = {}, context) {

@@ -11,7 +11,7 @@
 | write_file | 在工作区新建 UTF-8 文件；覆盖已有文件必须显式传 `overwrite: true`。 |
 | edit_file | 使用 `path/old_text/new_text` 精确替换；默认要求唯一匹配，`replace_all: true` 替换全部。支持纯空白原文；不做模糊猜测。 |
 | glob / grep | 文件名模式与内容搜索，支持分页、隐藏文件选择和明确截断说明。grep 默认字面量，`literal: false` 启用受超时控制的正则。 |
-| web_search / web_fetch | 搜索公共网页、返回来源链接，或抓取网页可读正文。无需模型供应商原生搜索；公共站点的网络可达性、反机器人策略仍可能导致明确失败。web_fetch 不渲染页面，也不继承浏览器登录态。 |
+| web_search / web_fetch | 老师和学生执行任务时默认内置，恢复会话后继续可用；搜索返回结构化标题、网址、摘要、来源站点与抓取时间，网页正文支持分页读取和内容变化校验。无需额外开关、搜索 API Key、MCP 或模型供应商原生搜索；公共站点的网络可达性、反机器人策略仍可能导致明确失败。web_fetch 不渲染页面，也不继承浏览器登录态。 |
 | browser | 操作已安装的无头浏览器：Windows 支持 Edge、Chrome、Firefox；Linux 支持 Chrome、Firefox，也保留 Chromium。统一提供 open、navigate、tabs、snapshot、click、fill、press、scroll、screenshot、close；按成员隔离实例，暂停时冻结受管进程树，结束时清理；下载被禁用。 |
 | read_image | 将 PNG、JPEG、GIF、WebP 作为真正的图片输入传给模型，单图最多 5 MiB；要求当前模型和接口支持图片。 |
 | read_pdf | 提取 PDF 指定页的文字，文件最多 20 MiB，`start_page` 从 1 开始，`max_pages` 最多 20。`include_document: true` 可将完整原 PDF 传给支持 PDF 的模型，用于扫描页或图表；页码范围只限制文字提取。没有内置本地 OCR。 |
@@ -27,6 +27,16 @@
 所有浏览器共用一套工具操作、暂停/恢复、取消和结果记录。每个成员使用独立临时配置，不接管用户已有浏览器、登录态或标签页；Linux Firefox 的临时配置位于用户主目录下的 `class-browser-*`，结束时同样清理。截图保存在工作区 `.class-artifacts/` 下并带内容哈希，老师可用 read_image 复核；这些工作区产物随工作文件保留，清理任务记录不会删掉它们。
 
 网页搜索依次尝试 CN Bing RSS、DuckDuckGo HTML 和 Bing RSS。可用 `CLASS_WEB_SEARCH_URL` 指定包含 `{query}` 的公开搜索入口，`CLASS_WEB_SEARCH_FORMAT` 选择 `rss` 或 `html`（html 按 DuckDuckGo 结果结构解析）；自定义入口失败后仍尝试默认入口。搜索和抓取均需要本机网络能够访问目标，DNS、连接超时或反机器人拦截会明确返回错误。
+
+`web_search` 的 `results` 包含 `title`、`url`、`snippet` 和 `source`（来源主机），同时返回搜索服务 `provider`、搜索入口 `sourceUrl` 和抓取时间 `fetchedAt`。`fetchedAt` 不是文章发布时间。可读日志与结构化结果共用输出预算；预算不足时只保留完整条目并标记 `truncated`，`resultCount` 为实际返回条数，`availableResultCount` 为应用 `maxResults` 后、输出裁剪前的条数。
+
+`web_fetch` 默认从 `offset: 0` 读取最多 `maxChars: 20000` 个 UTF-16 字符，优先在段落边界结束，返回 `offset`、`endOffset`、`nextOffset`、`totalChars`、最终 `url`、`requestedUrl`、标题、内容类型、`fetchedAt` 和 `contentHash`。继续读取时传入上次的 `nextOffset` 作为 `offset`，并传 `expectedHash: 上次的 contentHash`；`nextOffset: null` 表示已读到结尾。位置按转换后的可读正文计算，不是 HTML 字节位置，输出字节限制可能使实际返回的正文更短。
+
+每次分页都重新抓取并重新检查目标地址，不共享跨任务网页缓存。`contentHash` 是最终网址、标题和完整可读正文的 SHA-256 标识；传入 `expectedHash` 后，任一变化均返回 `WEB_CONTENT_CHANGED`，应去掉旧哈希从 `offset: 0` 重新读取，避免混合两个版本。哈希用于识别版本，不证明网页陈述真实。正文和元数据共同受工具输出限额约束；预算不足以返回正文或一条完整搜索结果时明确返回 `WEB_OUTPUT_LIMIT`，不会返回无法前进的分页位置。下载及解压后的响应仍各限 2 MiB，私网/本机目标、重定向校验和暂停/取消规则继续适用。
+
+搜索和抓取自动使用进程已有的 `HTTP_PROXY` / `HTTPS_PROXY` 环境变量（也支持小写形式），支持 HTTP 或 HTTPS 代理；`NO_PROXY` 支持精确主机、以 `.` / `*.` 开头的域名后缀、可选端口及 `*`。没有配置代理时直接连接，不修改系统代理。目标仍先通过本地 DNS 和公共地址校验，再由代理 CONNECT 到已校验的固定 IP；保持原网页的 Host 与 TLS 证书校验，代理凭据不会传给目标网页或写入工具结果。
+
+默认工具提示会引导 Agent 在用户要求联网、需要最新信息或需核实公开事实时使用搜索，并按需读取原文、引用实际来源链接；禁止联网等用户约束仍然有效。默认可用不代表每轮强制搜索，也不代表搜索摘要已经核验。投票和提取验收条件仍沿用各自的协作工具范围。
 
 三种模型协议（Messages、Responses、Chat）均将媒体作为对应的原生内容块发送。日志、工作摘要和审查快照只保存路径、大小、哈希等信息，不把大段 base64 当成文本证据。纯文本模型仍可使用 PDF 文字提取；不支持视觉/PDF 的接口不会因此自动获得视觉能力。
 

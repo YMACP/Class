@@ -1,6 +1,6 @@
 {
   "name": "class-harness",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -12,7 +12,9 @@
     "test": "node --test \"tests/*.test.js\"",
     "prestart": "npm run prepare:assets",
     "start": "node src/desktop.js",
+    "precli": "node scripts/embed-skills.js",
     "cli": "node src/cli.js",
+    "predemo": "node scripts/embed-skills.js",
     "demo": "node src/cli.js --demo",
     "build:windows": "node scripts/build-windows.js",
     "build:windows:x64": "node scripts/build-windows.js --arch x64",

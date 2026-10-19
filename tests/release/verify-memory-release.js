@@ -67,13 +67,14 @@ async function startModelServer() {
           { kind: 'agent', category: 'experience', content: 'For historical identifier recall, retrieve the original record and cite its exact reference; verify applicability before reuse. Release archive beacon: ' + marker, sourceRefs: [source.reference] },
         ] : [] }) }] });
       }
+      if(body.tools?.some(item=>item.name==='define_acceptance'))return send(res,submit('criteria','define_acceptance',{criteria:[{id:'archive',description:'Preserve or accurately recall the requested historical text with explicit source attribution.',evidenceType:'text'}]}));
       if (body.model === 'bob') return; // Class cancels this owned in-flight request during teacher review.
       if (body.model === 'teacher') {
         reviewRequests++;
-        if (phase === 1) return send(res, submit('archive-review', 'submit_review', { valid: true, report: 'The requested visible result has been archived.', answer: sourceText }));
-        if (reviewRequests === 1) return send(res, submit('recall-rejected', 'submit_review', { valid: false, report: 'Clarify the historical source; this is a recalled record, not new external verification.', gaps: ['Explicit source attribution'], recommendations: ['Revise the answer using the original reference already retrieved.'] }));
+        if (phase === 1) return send(res, submit('archive-review', 'submit_review', { valid: true, criteriaResults:[{criterionId:'archive',status:'passed',reason:'The submitted text accurately reproduces the source and required attribution.',evidenceKind:'text',evidenceRefs:[input.answer.submissionId]}], report: 'The requested visible result has been archived.', answer: sourceText }));
+        if (reviewRequests === 1) return send(res, submit('recall-rejected', 'submit_review', { valid: false, criteriaResults:[{criterionId:'archive',status:'failed',reason:'The source attribution still needs clarification.',evidenceKind:'text',evidenceRefs:[]}], report: 'Clarify the historical source; this is a recalled record, not new external verification.', gaps: ['Explicit source attribution'], recommendations: ['Revise the answer using the original reference already retrieved.'] }));
         assert.equal(reviewRequests, 2); assert.ok(input.answer.content.includes(marker)); assert.ok(input.answer.content.includes(sourceReference));
-        return send(res, submit('recall-accepted', 'submit_review', { valid: true, report: 'The revision accurately cites the original archive.', answer: input.answer.content }));
+        return send(res, submit('recall-accepted', 'submit_review', { valid: true, criteriaResults:[{criterionId:'archive',status:'passed',reason:'The submitted text accurately reproduces the source and required attribution.',evidenceKind:'text',evidenceRefs:[input.answer.submissionId]}], report: 'The revision accurately cites the original archive.', answer: input.answer.content }));
       }
       assert.equal(body.model, 'alice'); aliceRequests++;
       if (phase === 1) {

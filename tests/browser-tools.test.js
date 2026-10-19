@@ -218,6 +218,23 @@ test('browser pause gate blocks new work and stop cancels it without a launch', 
   assert.equal(browser.profiles.size, 0);
 });
 
+test('locked owned profile cleanup has bounded whole-directory retries and preserves failure evidence', async t => {
+  const tempRoot = await fs.realpath(os.tmpdir()), profile = await fs.mkdtemp(path.join(tempRoot, 'class-browser-'));
+  const browser = new BrowserTools(basicManager()); browser.profiles.add(profile);
+  let attempts = 0;
+  const replacement = t.mock.method(fs, 'rm', async (target, options) => {
+    assert.equal(target, profile); assert.equal(options.maxRetries, 0); attempts++;
+    throw Object.assign(new Error('fixture locked profile'), { code: 'EBUSY' });
+  });
+  try {
+    await assert.rejects(browser._removeProfile({ profile, tempRoot }), /fixture locked profile/);
+    assert.equal(attempts, 3); assert.equal(browser.profiles.has(profile), true); assert.equal((await fs.stat(profile)).isDirectory(), true);
+  } finally {
+    replacement.mock.restore(); assert.equal(path.dirname(profile), tempRoot); assert.equal(await fs.realpath(profile), profile);
+    await fs.rm(profile, { recursive: true, force: true });
+  }
+});
+
 test('owned headless browser: actions, student isolation, process pause and cancellation cleanup', { timeout: 180000 }, async t => {
   let executable;
   try { executable = await findBrowserExecutable(); }
@@ -249,10 +266,11 @@ test('owned headless browser: actions, student isolation, process pause and canc
   const run = (student, args, signal) => browser.execute(student, 'browser', args, signal);
   const output = result => JSON.parse(result.output);
   t.after(async () => {
-    await browser.stopAll();
-    await manager.stopAll();
-    for (const socket of connections) socket.destroy();
-    await new Promise(resolve => server.close(resolve));
+    try { await browser.stopAll(); await manager.stopAll(); }
+    finally {
+      for (const socket of connections) socket.destroy();
+      await new Promise(resolve => server.close(resolve));
+    }
     const relative = path.relative(tempRoot, workspace);
     assert.ok(relative.startsWith('class-browser-test-') && path.dirname(relative) === '.');
     assert.equal(await fs.realpath(workspace), workspace);
@@ -263,6 +281,12 @@ test('owned headless browser: actions, student isolation, process pause and canc
   assert.equal(first.title, 'Class browser fixture');
   const firstSession = browser.sessions.get('alice');
   assert.ok(firstSession.record.controlledTree);
+  assert.ok(alive(firstSession.child), 'Browser startup must retain the owned child instead of relaunching outside its tree');
+  if (process.platform === 'win32' && firstSession.browserType === 'chromium') {
+    assert.ok(firstSession.child.spawnargs.includes('--enable-automation'));
+    assert.ok(!firstSession.child.spawnargs.includes('--do-not-de-elevate'), 'The production launcher must work without the former test workaround');
+  }
+  assert.ok(!firstSession.child.spawnargs.includes('--no-sandbox'));
   const firstProfile = firstSession.profile;
   assert.notEqual(firstProfile, workspace);
   const expectedProfileRoot = process.platform === 'linux' && firstSession.browserType === 'firefox' ? await fs.realpath(os.homedir()) : tempRoot;
@@ -299,9 +323,12 @@ test('owned headless browser: actions, student isolation, process pause and canc
   // must not catch up during the paused interval after the processes resume.
   await run('bob', { action: 'close', all: true });
   const before = await evaluate('Number(document.querySelector("#tick").textContent)');
-  const delayedOpen = run('alice', { action: 'open', url: base + '/delayed', timeoutMs: 1000 });
+  const navigationTimeout = 5000;
+  const delayedOpen = run('alice', { action: 'open', url: base + '/delayed', timeoutMs: navigationTimeout });
   delayedOpen.catch(() => {});
-  const delayedResponse = await delayedRequested;
+  // Propagate startup/navigation failures instead of waiting forever for a
+  // fixture request which may never arrive on a busy Windows test host.
+  const delayedResponse = await Promise.race([delayedRequested, delayedOpen.then(() => { throw new Error('Delayed navigation completed before the fixture request'); })]);
   await manager.pauseAll();
   delayedResponse.end('<!doctype html><title>Resumed navigation</title>Ready');
   assert.equal(firstSession.record.suspended, true);
@@ -310,7 +337,7 @@ test('owned headless browser: actions, student isolation, process pause and canc
   waiting.finally(() => { completed = true; }).catch(() => {});
   await delay(100); // drain requests already sent before the tree was frozen
   const pausedRequests = tickRequests;
-  await delay(1300);
+  await delay(navigationTimeout + 300);
   assert.equal(completed, false);
   assert.equal(tickRequests, pausedRequests, 'page timer/network activity must remain frozen');
   await manager.resumeAll();

@@ -10,6 +10,10 @@ import { recoveryAnchorFor, readRecoverySelection, publishRecoverySelection, val
 import { desktopLaunchSpec } from './recovery-launcher.js';
 import { defaultDataDirectory } from './platform-paths.js';
 import { configureStartupLog, redactStartupSecret, startupLog, startupFailureMessage, launchBrowser, writeBrowserEntry, showStartupError } from './startup-support.js';
+import { runBrowserMCPServer } from './browser-mcp-server.js';
+import { runLocalAnalysisMCPServer } from './local-analysis-mcp.js';
+import { createSelfUpdater, applyUpdate, cleanupUpdate } from './self-update.js';
+import { COMPILED_DESKTOP } from './version.js';
 
 const args = process.argv.slice(2);
 const instanceId = crypto.randomBytes(16).toString('hex');
@@ -175,11 +179,24 @@ function newInstance(server, token) {
 
 async function createApplication(directory, anchor, workspaceOverride, requireMemoryReady = false) {
   const token = crypto.randomBytes(32).toString('hex'); redactStartupSecret(token);
+  const updater = createSelfUpdater({
+    getLaunch: () => ({ requestedPath, dataDir, cwd: process.cwd(), noBrowser: args.includes('--no-browser') }),
+    async onInstall(helper) {
+      try {
+        await shutdown(); app?.assertUpdateSafe();
+        await helper.commit(); process.exit(0);
+      } catch (error) {
+        startupLog('update-failed', '更新失败');
+        await helper.abort(true).catch(() => {}); process.exit(1);
+      }
+    },
+  });
+  await updater.restoreStatus(directory);
   const server = await createClassServer({
     dataDir: directory, dataAnchor: anchor, workspaceOverride, requireMemoryReady,
     dataDirectoryLifecycle: prepareDataDirectory,
     dataDirectoryLoader: ({ path: target }) => selectDataDirectory({ mode: 'existing', path: target }),
-    token, assets: ASSETS, port: 0, onShutdown: requestShutdown,
+    token, assets: ASSETS, port: 0, onShutdown: requestShutdown, updater,
   });
   return { server, instance: newInstance(server, token) };
 }
@@ -388,9 +405,21 @@ async function main() {
   startupLog('service-ready', currentInstance.url);
   console.log(`Class is ready.\n${currentInstance.url}\nData: ${dataDir}\nUse the Web UI exit button to stop the background service.`);
   await openBrowser(currentInstance);
+  if (COMPILED_DESKTOP && option('--update-cleanup')) cleanupUpdate(path.resolve(option('--update-cleanup'))).catch(() => startupLog('update-cleanup-pending', '更新临时文件尚未清理'));
 }
 
-main().catch(async error => {
+// Stdio clients must never claim a data directory, start the UI or print a
+// desktop startup message. This entry is bundled into the normal executable.
+if (args.includes('--apply-update')) {
+  if (!COMPILED_DESKTOP) { console.error('Class update helper requires a packaged executable.'); process.exitCode = 1; }
+  else applyUpdate(path.resolve(option('--apply-update')), option('--update-nonce')).catch(() => { console.error('Class 更新失败；原程序或备份已保留。'); process.exitCode = 1; });
+} else if (args.includes('--browser-mcp')) {
+  runBrowserMCPServer().catch(() => { console.error('Class browser MCP could not shut down cleanly.'); process.exitCode = 1; });
+} else if (args.includes('--local-analysis-mcp')) {
+  Promise.resolve().then(() => runLocalAnalysisMCPServer(option('--local-analysis-mcp'))).catch(error => {
+    console.error('Class local analysis MCP: ' + error.message); process.exitCode = 1;
+  });
+} else main().catch(async error => {
   const reason = startupFailureMessage(error);
   console.error(`Class could not start: ${reason}`);
   const log = startupLog('startup-failed', reason);

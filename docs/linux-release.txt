@@ -1,6 +1,6 @@
-Class 1.1.0 for Linux amd64
+Class 1.2.0 for Linux amd64
 
-本轮仅提供 amd64（x86-64），下载 Class 可执行文件；可选归档名为 Class-1.1.0-linux-amd64.tar.gz。
+本轮仅提供 amd64（x86-64），下载 Class 可执行文件；可选归档名为 Class-1.2.0-linux-amd64.tar.gz。
 本包为 glibc Linux 构建，不适用于 Alpine/musl。当前版本的运行验证以对应验收报告为准。
 
 下载后赋予执行权限并运行；如果下载的是归档，先解压：

@@ -50,6 +50,7 @@ const mock = http.createServer(async (req, res) => {
     assert.equal(req.headers['x-api-key'], 'native-fixture-model');
     const input = inputFor(body);
     assert.equal(input.task, 'Read report.txt, verify the value 42, and cite its recorded evidence.');
+    if(body.tools?.some(item=>item.name==='define_acceptance')) {tool(res,'criteria','define_acceptance',{criteria:[{id:'value',description:'Read report.txt, verify value 42 and cite recorded evidence.',evidenceType:'tool'}]});return;}
     if (body.model === 'bob') return; // Class must cancel this unfinished member on final acceptance.
     if (body.model === 'alice') {
       state.studentCalls++;
@@ -81,7 +82,7 @@ const mock = http.createServer(async (req, res) => {
     const result = JSON.parse(toolResult(body).content);
     assert.ok(JSON.stringify(result).includes('Unrelated announcement 45'), 'The teacher can recover omitted original evidence');
     state.originalRecovered = true;
-    tool(res, 'accepted', 'submit_review', { valid: true, answer: 'The verified value is 42.', report: 'Verified the original saved output.', evidenceRefs: [state.result.outputRef] });
+    tool(res, 'accepted', 'submit_review', { valid: true, criteriaResults:[{criterionId:'value',status:'passed',reason:'The actual saved command output was recovered and verified.',evidenceKind:'tool',evidenceRefs:[state.result.outputRef]}], answer: 'The verified value is 42.', report: 'Verified the original saved output.', evidenceRefs: [state.result.outputRef] });
   } catch (error) { mockFailure = error; if (!res.headersSent) res.writeHead(500); res.end(); }
 });
 mock.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)); });
@@ -112,7 +113,7 @@ try {
   }
   assert.equal(instance?.pid, child.pid);
   assert.equal(new URL(instance.url).hostname, '127.0.0.1');
-  assert.equal((await api('/health')).version, '1.1.0');
+  assert.equal((await api('/health')).version, '1.2.0');
   const initial = await api('/api/state'); assert.equal(initial.agents.length, 0); assert.equal(initial.judge.enabled, false);
   assert.equal(Object.hasOwn(initial.judge, 'mode'), false);
   assert.equal(initial.judge.protocol, 'system-one'); assert.equal(initial.judge.model, 'jev-latest');
@@ -208,4 +209,4 @@ finally {
   await fs.rm(actual, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 if (failure) throw failure;
-console.log(JSON.stringify({ version: '1.1.0', platform: process.platform, architecture: process.arch, target: source ? 'source' : path.basename(executable), fixedJudge: { protocol: 'system-one', model: 'jev-latest', legacyProfileNormalized: true, legacyApiNormalized: true, memberProtocolsPreserved: true }, keySettings: { missingKeyRejected: true, replacementUsed: true, emptyAndOmittedRetained: true, rejectedClearPreserved: true, connectionChecks }, results, cleanShutdown: true, temporaryDataRemoved: true }, null, 2));
+console.log(JSON.stringify({ version: '1.2.0', platform: process.platform, architecture: process.arch, target: source ? 'source' : path.basename(executable), fixedJudge: { protocol: 'system-one', model: 'jev-latest', legacyProfileNormalized: true, legacyApiNormalized: true, memberProtocolsPreserved: true }, keySettings: { missingKeyRejected: true, replacementUsed: true, emptyAndOmittedRetained: true, rejectedClearPreserved: true, connectionChecks }, results, cleanShutdown: true, temporaryDataRemoved: true }, null, 2));

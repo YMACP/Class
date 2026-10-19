@@ -88,18 +88,19 @@ async function runProtocolScenario(t, protocol, correction) {
       if (body.model === 'bob-model') return untilAborted(options.signal);
       const input = requestInput(body);
       if (body.model === 'teacher-model') {
+        if (body.tools.some(item => (item.function?.name || item.name) === 'define_acceptance')) return toolResponse(protocol, 'criteria', 'define_acceptance', {criteria:[{id:'sum',description:'Compute and verify the sum.',evidenceType:'tool'}]});
         reviewed.push(input);
         assert.ok(reviewed.length <= 2, 'only the initial and revised candidates should be reviewed');
         if (reviewed.length === 1) {
           return toolResponse(protocol, 'review-rejected', 'submit_review', {
-            valid: false, report: rejectReport, gaps: ['The candidate still needs verification or correction.'],
+            valid: false, criteriaResults:[{criterionId:'sum',status:'failed',reason:'Verification or correction required.',evidenceKind:'tool',evidenceRefs:[]}], report: rejectReport, gaps: ['The candidate still needs verification or correction.'],
             recommendations: [rejectReport],
           });
         }
         assert.equal(input.answer.content, 'The sum is 5050.');
         assert.deepEqual(input.answer.evidenceRefs, references);
         return toolResponse(protocol, 'review-passed', 'submit_review', {
-          valid: true, answer: input.answer.content, report: 'The saved proof verifies the corrected complete answer.', evidenceRefs: references,
+          valid: true, criteriaResults:[{criterionId:'sum',status:'passed',reason:'The saved proof verifies the sum.',evidenceKind:'tool',evidenceRefs:references}], answer: input.answer.content, report: 'The saved proof verifies the corrected complete answer.', evidenceRefs: references,
         });
       }
       assert.equal(body.model, 'alice-model');

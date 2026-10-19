@@ -133,13 +133,14 @@ test('HTTP restart preserves arbitrary visible history for native retrieval whil
     try {
       const input = JSON.parse(body.messages.find(message => message.role === 'user' && typeof message.content === 'string').content);
       if (['extract', 'reflect'].includes(input.type) && Array.isArray(input.sources)) return Response.json({ stop_reason: 'end_turn', content: [{ type: 'text', text: '{"memories":[]}' }] });
+      if (body.tools?.some(tool => tool.name === 'define_acceptance')) return toolResponse('criteria', 'define_acceptance', { criteria: [{ id: 'archive', description: 'Preserve or accurately recall the requested historical text with source attribution.', evidenceType: 'text' }] });
       if (body.model === 'teacher') {
         reviewRequests++;
-        if (phase === 1) return toolResponse('initial-review', 'submit_review', { valid: true, report: 'Recorded the requested result.', answer: 'Archive complete.' });
-        if (reviewRequests === 1) return toolResponse('recall-review-reject', 'submit_review', { valid: false, report: 'Clarify that the identifier came from the original archived source, not current external verification.', gaps: ['Source attribution'], recommendations: ['Revise the final wording using the already retrieved source.'] });
+        if (phase === 1) return toolResponse('initial-review', 'submit_review', { valid: true, criteriaResults: [{ criterionId: 'archive', status: 'passed', reason: 'The requested text has been preserved in the submitted response.', evidenceKind: 'text', evidenceRefs: [input.answer.submissionId] }], report: 'Recorded the requested result.', answer: 'Archive complete.' });
+        if (reviewRequests === 1) return toolResponse('recall-review-reject', 'submit_review', { valid: false, criteriaResults: [{ criterionId: 'archive', status: 'failed', reason: 'Historical source attribution is incomplete.', evidenceKind: 'text', evidenceRefs: [] }], report: 'Clarify that the identifier came from the original archived source, not current external verification.', gaps: ['Source attribution'], recommendations: ['Revise the final wording using the already retrieved source.'] });
         assert.ok(input.answer.content.includes(marker));
         assert.ok(input.answer.content.includes(sourceReference));
-        return toolResponse('recall-review-accept', 'submit_review', { valid: true, report: 'The revised wording correctly cites the original archive.', answer: input.answer.content });
+        return toolResponse('recall-review-accept', 'submit_review', { valid: true, criteriaResults: [{ criterionId: 'archive', status: 'passed', reason: 'The revised text matches the historical source and explicitly attributes it.', evidenceKind: 'text', evidenceRefs: [input.answer.submissionId] }], report: 'The revised wording correctly cites the original archive.', answer: input.answer.content });
       }
       assert.equal(body.model, 'alice'); aliceRequests++;
       if (phase === 1) {
@@ -213,8 +214,10 @@ test('disabling memory removes native declarations while normal model-driven tea
     try {
       observed.push(body.model);
       assert.ok(!body.tools.some(tool => /^(?:memory_|session_)/.test(tool.name)), 'Disabled memory must not advertise tools');
+      const input = JSON.parse(body.messages.find(message => message.role === 'user' && typeof message.content === 'string').content);
+      if (body.tools.some(tool => tool.name === 'define_acceptance')) return toolResponse('criteria', 'define_acceptance', { criteria: [{ id: 'normal', description: 'Provide the requested ordinary task response.', evidenceType: 'text' }] });
       if (body.model === 'bob') return untilAborted(options.signal);
-      if (body.model === 'teacher') return toolResponse('disabled-review', 'submit_review', { valid: true, report: 'Current task verification passed.', answer: 'normal workflow complete' });
+      if (body.model === 'teacher') return toolResponse('disabled-review', 'submit_review', { valid: true, criteriaResults: [{ criterionId: 'normal', status: 'passed', reason: 'The submitted text is the requested response.', evidenceKind: 'text', evidenceRefs: [input.answer.submissionId] }], report: 'Current task verification passed.', answer: 'normal workflow complete' });
       return toolResponse('disabled-answer', 'submit_answer', { content: 'normal workflow complete' });
     } catch (error) { errors.push(error); throw error; }
   });

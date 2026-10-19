@@ -3,11 +3,11 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { canonicalDataPath, DATA_POINTER, sameDirectory } from './data-location.js';
-import { atomicJSON, DEFAULT_SETTINGS } from './profile-store.js';
+import { atomicJSON, DEFAULT_SETTINGS, MAX_PROFILE_BYTES } from './profile-store.js';
 import { defaultStartupLogDirectory } from './platform-paths.js';
 import { loadSecrets } from './secret-store.js';
 
-const MAX_PROFILE_BYTES = 2 * 1024 * 1024;
+const MAX_RECORD_BYTES = 2 * 1024 * 1024;
 const MAX_TREE_ENTRIES = 100000;
 const MAX_TREE_DEPTH = 64;
 const CREDENTIAL_FILES = ['credentials.dpapi.json', 'credentials.aesgcm.json', 'credentials.key'];
@@ -52,7 +52,7 @@ async function directoryInfo(directory) {
   return info;
 }
 
-async function readJSON(filename, label, maximum = MAX_PROFILE_BYTES) {
+async function readJSON(filename, label, maximum = MAX_RECORD_BYTES) {
   const before = await fs.lstat(filename);
   regular(before, label);
   const file = await fs.open(filename, constants.O_RDONLY | (constants.O_NOFOLLOW || 0) | (constants.O_NONBLOCK || 0));
@@ -61,7 +61,8 @@ async function readJSON(filename, label, maximum = MAX_PROFILE_BYTES) {
     regular(current, label);
     if (before.dev !== current.dev || before.ino !== current.ino) throw error(`${label}在读取期间发生变化，请重试`);
     if (current.size > maximum) throw error(`${label}超过允许的大小`);
-    const bytes = Buffer.alloc(maximum + 1);
+    // Allocate for this file, not the maximum allowed profile capacity.
+    const bytes = Buffer.alloc(current.size + 1);
     let length = 0;
     while (length < bytes.length) {
       const result = await file.read(bytes, length, bytes.length - length, length);
@@ -69,6 +70,7 @@ async function readJSON(filename, label, maximum = MAX_PROFILE_BYTES) {
       length += result.bytesRead;
     }
     if (length > maximum) throw error(`${label}超过允许的大小`);
+    if (length !== current.size) throw error(`${label}在读取期间发生变化，请重试`);
     try { return JSON.parse(bytes.subarray(0, length).toString('utf8')); }
     catch { throw error(`${label}格式损坏；原文件已保留`); }
   } finally { await file.close(); }
@@ -229,7 +231,7 @@ export async function validateRecoveryDirectory(target, { allowCreate = false, a
     }
     return { dataDir, missing: false, empty: true };
   }
-  const config = await readJSON(profile, 'Agent 配置');
+  const config = await readJSON(profile, 'Agent 配置', MAX_PROFILE_BYTES);
   if (!config || config.version !== 1 || !Array.isArray(config.agents) || config.agents.length > 17 ||
       !config.settings || typeof config.settings !== 'object' || Array.isArray(config.settings) ||
       typeof config.settings.cwd !== 'string' || !path.isAbsolute(config.settings.cwd)) {
