@@ -10,7 +10,7 @@ const deferred = () => { let resolve; const promise = new Promise(done => { reso
 function manager(options = {}) {
   let gate;
   return {
-    maxOutputBytes: 65536, controller: new AbortController(), webOptions: options, paused: false, events: new EventEmitter(),
+    maxOutputBytes: 65536, controller: new AbortController(), webOptions: { proxyEnv: {}, ...options }, paused: false, events: new EventEmitter(),
     async checkpoint(signal) {
       signal.throwIfAborted();
       if (gate) await new Promise((resolve, reject) => {
@@ -80,11 +80,95 @@ test('fetch reads compressed text and JSON; enforces text and shared UTF-8 outpu
   const contentLimited = await call(tools, 'web_fetch', { url: origin, maxChars: 100 });
   assert.equal(contentLimited.truncated, true);
   assert.match(contentLimited.output, /Content truncated/);
-  tools.maxOutputBytes = 321;
+  tools.maxOutputBytes = 1024;
   const byteLimited = await call(tools, 'web_fetch', { url: origin });
   assert.equal(byteLimited.truncated, true);
-  assert.ok(Buffer.byteLength(byteLimited.output) <= 321);
+  assert.ok(Buffer.byteLength(JSON.stringify(byteLimited)) <= 1024);
+  assert.ok(byteLimited.nextOffset > 0);
   assert.doesNotMatch(byteLimited.output, /�/);
+});
+
+test('fetch pages preserve every character under combined JSON, metadata and UTF-8 limits', { timeout: 5000 }, async t => {
+  const document = Array.from({ length: 9 }, (_, i) => `Paragraph ${i}: ` + '中文🙂\\"\t'.repeat(18)).join('\n\n');
+  let requests = 0;
+  const { origin } = await fixture(t, (_request, response) => {
+    requests++; response.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }).end(document);
+  });
+  const tools = manager({ allowPrivateNetwork: true });
+  tools.maxOutputBytes = 1200;
+  let offset = 0, contentHash, combined = '', pages = 0;
+  do {
+    const result = await call(tools, 'web_fetch', { url: origin, offset, maxChars: 250, ...(contentHash ? { expectedHash: contentHash } : {}) });
+    assert.equal(result.offset, offset);
+    assert.equal(result.totalChars, document.length);
+    assert.ok(result.endOffset > offset && result.endOffset <= offset + 250);
+    assert.ok(Buffer.byteLength(JSON.stringify(result)) <= tools.maxOutputBytes);
+    assert.equal(result.requestedUrl, origin + '/');
+    assert.equal(result.url, origin + '/');
+    assert.match(result.contentHash, /^[a-f0-9]{64}$/);
+    assert.ok(Number.isFinite(Date.parse(result.fetchedAt)));
+    if (contentHash) assert.equal(result.contentHash, contentHash);
+    contentHash = result.contentHash;
+    const body = result.output.slice(result.output.indexOf('\n\n') + 2).replace(/\n\[Content truncated; continue with nextOffset and expectedHash=contentHash\.\]$/, '');
+    assert.equal(body, document.slice(offset, result.endOffset));
+    assert.doesNotMatch(body, /�/);
+    combined += body; pages++;
+    assert.ok(pages < 100, 'pagination must make progress');
+    assert.equal(result.truncated, result.nextOffset !== null);
+    offset = result.nextOffset;
+  } while (offset !== null);
+  assert.equal(combined, document);
+  assert.equal(requests, pages, 'pages are refetched, never served from a cross-task cache');
+  const end = await call(tools, 'web_fetch', { url: origin, offset: document.length, expectedHash: contentHash });
+  assert.equal(end.nextOffset, null);
+  assert.equal(end.endOffset, document.length);
+  assert.equal(end.truncated, false);
+});
+
+test('fetch prefers complete paragraphs and never splits a surrogate pair', { timeout: 5000 }, async t => {
+  const paragraphs = 'a'.repeat(100) + '\n\n' + 'b'.repeat(100);
+  const unicode = 'a'.repeat(99) + '🙂' + 'c'.repeat(100);
+  const { origin } = await fixture(t, (request, response) => response.end(request.url === '/unicode' ? unicode : paragraphs));
+  const tools = manager({ allowPrivateNetwork: true });
+  const first = await call(tools, 'web_fetch', { url: origin, maxChars: 150 });
+  assert.equal(first.nextOffset, 102);
+  const beforeEmoji = await call(tools, 'web_fetch', { url: origin + '/unicode', maxChars: 100 });
+  assert.equal(beforeEmoji.nextOffset, 99);
+  const afterEmoji = await call(tools, 'web_fetch', { url: origin + '/unicode', offset: beforeEmoji.nextOffset, expectedHash: beforeEmoji.contentHash, maxChars: 100 });
+  assert.match(afterEmoji.output, /🙂/);
+  assert.doesNotMatch(afterEmoji.output, /�/);
+  await assert.rejects(call(tools, 'web_fetch', { url: origin + '/unicode', offset: 100 }), { code: 'WEB_ARGUMENT_INVALID' });
+  await assert.rejects(call(tools, 'web_fetch', { url: origin, offset: paragraphs.length + 1 }), { code: 'WEB_OFFSET_OUT_OF_RANGE' });
+});
+
+test('fetch refuses to combine pages from changed content, titles or redirect targets', { timeout: 5000 }, async t => {
+  let title = 'Evidence', body = 'original '.repeat(80), target = '/page-a';
+  const { origin } = await fixture(t, (request, response) => {
+    if (request.url === '/') { response.writeHead(302, { location: target }).end(); return; }
+    response.writeHead(200, { 'content-type': 'text/html' }).end(`<title>${title}</title><p>${body}</p>`);
+  });
+  const tools = manager({ allowPrivateNetwork: true });
+  let previous = await call(tools, 'web_fetch', { url: origin, maxChars: 100 });
+  assert.equal(previous.url, origin + '/page-a');
+  assert.equal(previous.title, 'Evidence');
+  for (const change of [() => { body = 'updated '.repeat(80); }, () => { title = 'New title'; }, () => { target = '/page-b'; }]) {
+    change();
+    await assert.rejects(call(tools, 'web_fetch', { url: origin, offset: previous.nextOffset, expectedHash: previous.contentHash }), { code: 'WEB_CONTENT_CHANGED' });
+    const restarted = await call(tools, 'web_fetch', { url: origin, maxChars: 100 });
+    assert.notEqual(restarted.contentHash, previous.contentHash);
+    previous = restarted;
+  }
+  const next = await call(tools, 'web_fetch', { url: origin, offset: previous.nextOffset, expectedHash: previous.contentHash.toUpperCase() });
+  assert.equal(next.contentHash, previous.contentHash);
+});
+
+test('fetch fails clearly if the output budget cannot include metadata and content', { timeout: 5000 }, async t => {
+  const { origin } = await fixture(t, (_request, response) => response.end('readable text '.repeat(100)));
+  const tools = manager({ allowPrivateNetwork: true });
+  for (const budget of [1, 128, 321]) {
+    tools.maxOutputBytes = budget;
+    await assert.rejects(call(tools, 'web_fetch', { url: origin }), { code: 'WEB_OUTPUT_LIMIT' });
+  }
 });
 
 test('fetch rejects invalid URLs, private literals and mixed public/private DNS answers before requests', { timeout: 5000 }, async t => {
@@ -233,10 +317,42 @@ test('search parses DuckDuckGo result titles, decoded URLs and snippets with que
   const result = await call(tools, 'web_search', { query: '中文 & proof', maxResults: 1 });
   assert.equal(query, '中文 & proof');
   assert.equal(result.resultCount, 1);
+  assert.deepEqual(result.results, [{ title: 'Real & result', url: 'https://example.com/proof?a=1&b=2', snippet: 'Verified snippet.', source: 'example.com' }]);
+  assert.equal(result.provider, 'DDG fixture');
+  assert.equal(result.availableResultCount, 1);
+  assert.ok(Number.isFinite(Date.parse(result.fetchedAt)));
   assert.match(result.output, /Real & result/);
   assert.match(result.output, /https:\/\/example.com\/proof\?a=1&b=2/);
   assert.match(result.output, /Verified snippet/);
   assert.doesNotMatch(result.output, /Second/);
+});
+
+test('search bounds structured results and readable output together without breaking citations', { timeout: 5000 }, async t => {
+  let requests = 0;
+  const { origin } = await fixture(t, (_request, response) => {
+    requests++;
+    response.writeHead(200, { 'content-type': 'application/rss+xml' }).end('<rss><channel>' + Array.from({ length: 5 }, (_, i) =>
+      `<item><title>Evidence ${i}</title><link>https://example.com/proof/${i}</link><description>${'中文🙂 proof '.repeat(12)}</description></item>`).join('') + '</channel></rss>');
+  });
+  const tools = manager({ allowPrivateNetwork: true, searchProviders: [
+    { name: 'RSS fixture', format: 'rss', url: origin + '/?q={query}' },
+    { name: 'Unused fallback', format: 'rss', url: origin + '/unused?q={query}' },
+  ] });
+  tools.maxOutputBytes = 1800;
+  const result = await call(tools, 'web_search', { query: 'fixture' });
+  assert.equal(result.truncated, true);
+  assert.ok(result.resultCount > 0 && result.resultCount < 5);
+  assert.equal(result.availableResultCount, 5);
+  assert.equal(result.results.length, result.resultCount);
+  assert.ok(Buffer.byteLength(JSON.stringify(result)) <= tools.maxOutputBytes);
+  for (const entry of result.results) {
+    assert.ok(result.output.includes(`URL: ${entry.url}\n`));
+    assert.equal(entry.source, 'example.com');
+  }
+  assert.doesNotMatch(result.output, /�/);
+  tools.maxOutputBytes = 128;
+  await assert.rejects(call(tools, 'web_search', { query: 'fixture' }), { code: 'WEB_OUTPUT_LIMIT' });
+  assert.equal(requests, 2, 'an output budget error must not retry other providers');
 });
 
 test('search falls back from anti-bot HTML to real RSS results, removing duplicates', { timeout: 5000 }, async t => {
@@ -303,6 +419,9 @@ test('a long pause freezes both search provider and total operation deadlines', 
 test('invalid arguments fail before any request', { timeout: 5000 }, async () => {
   const tools = manager({ lookup: () => { throw new Error('must not resolve'); } });
   await assert.rejects(call(tools, 'web_fetch', { url: 'https://example.com', timeoutMs: 0 }), { code: 'WEB_ARGUMENT_INVALID' });
+  await assert.rejects(call(tools, 'web_fetch', { url: 'https://example.com', offset: -1 }), { code: 'WEB_ARGUMENT_INVALID' });
+  await assert.rejects(call(tools, 'web_fetch', { url: 'https://example.com', offset: 1.5 }), { code: 'WEB_ARGUMENT_INVALID' });
+  await assert.rejects(call(tools, 'web_fetch', { url: 'https://example.com', expectedHash: 'not-a-hash' }), { code: 'WEB_ARGUMENT_INVALID' });
   await assert.rejects(call(tools, 'web_search', { query: ' ' }), { code: 'WEB_ARGUMENT_INVALID' });
   await assert.rejects(call(tools, 'web_search', { query: 'x'.repeat(2001) }), { code: 'WEB_ARGUMENT_INVALID' });
   await assert.rejects(call(tools, 'web_search', { query: 'fixture', maxResults: 11 }), { code: 'WEB_ARGUMENT_INVALID' });

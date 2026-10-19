@@ -42,7 +42,7 @@ function lastToolResult(protocol, body) {
   return JSON.parse(body.messages.flatMap(item => Array.isArray(item.content) ? item.content : []).filter(item => item.type === 'tool_result').at(-1).content);
 }
 
-async function runJudgmentScenario(t, protocol, scenario = 'enabled') {
+async function runJudgmentScenario(t, protocol, scenario = 'enabled', taskMode = 'auto') {
   const allFeatures = { taskDispatch: true, toolCalls: true, toolResults: true, submissionReview: true };
   const features = scenario === 'select-none' ? Object.fromEntries(Object.keys(allFeatures).map(name => [name, false]))
     : scenario === 'submission-only' ? { taskDispatch: false, toolCalls: false, toolResults: false, submissionReview: true } : allFeatures;
@@ -88,11 +88,11 @@ async function runJudgmentScenario(t, protocol, scenario = 'enabled') {
   teacherTools = new ToolManager({ cwd: workspace, allowShell: false });
   const provider = { protocol, model: 'alice-model', baseUrl: 'https://class-model.invalid/v1', apiKey: 'model-fixture-key', timeoutMs: null };
   const students = [
-    createStudent({ id: 'alice', name: 'Alice' }, provider, tools, { judgment }),
-    createStudent({ id: 'bob', name: 'Bob', provider: { model: 'bob-model' } }, provider, tools, { judgment }),
+    createStudent({ id: 'alice', name: 'Alice' }, provider, tools, { judgment, taskMode }),
+    createStudent({ id: 'bob', name: 'Bob', provider: { model: 'bob-model' } }, provider, tools, { judgment, taskMode }),
   ];
-  const teacher = createTeacher({ id: 'teacher', provider: { model: 'teacher-model' } }, provider, teacherTools, { judgment });
-  engine = new ClassEngine({ students, teacher, tools, teacherTools, journal, taskTimeoutMs: 20000, discoveryWindowMs: 0 });
+  const teacher = createTeacher({ id: 'teacher', provider: { model: 'teacher-model' } }, provider, teacherTools, { judgment, taskMode });
+  engine = new ClassEngine({ students, teacher, tools, teacherTools, journal, taskTimeoutMs: 20000, discoveryWindowMs: 0, taskMode });
 
   const studentInputs = [], reviewed = [];
   let aliceRequests = 0, bobRequests = 0, references, projected, bobResult, recovered;
@@ -110,6 +110,10 @@ async function runJudgmentScenario(t, protocol, scenario = 'enabled') {
       assert.equal(new URL(url).hostname, 'class-model.invalid');
       const body = JSON.parse(options.body);
       const input = requestInput(body);
+      if (taskMode === 'web_pentest') assert.match(JSON.stringify(body), /当前任务模式：Web漏洞挖掘/);
+      if (taskMode === 'ctf_solve') assert.match(JSON.stringify(body), /当前任务模式：CTF题目求解/);
+      if (taskMode === 'binary_audit') assert.match(JSON.stringify(body), /当前任务模式：二进制漏洞挖掘/);
+      if (taskMode === 'pentest') assert.match(JSON.stringify(body), /当前任务模式：渗透测试/);
       assert.equal(input.task, task);
       if (body.model === 'bob-model') {
         bobRequests++;
@@ -120,6 +124,7 @@ async function runJudgmentScenario(t, protocol, scenario = 'enabled') {
         return untilAborted(options.signal);
       }
       if (body.model === 'teacher-model') {
+        if (body.tools.some(item => (item.function?.name || item.name) === 'define_acceptance')) return toolResponse(protocol, 'criteria', 'define_acceptance', {criteria:[{id:'sum',description:'Compute and verify the sum.',evidenceType:'tool'}]});
         reviewed.push(input);
         assert.ok(reviewed.length <= 2, 'the teacher must review exactly the initial and revised answers');
         const expected = reviewed.length === 1 ? initialAnswer : correctedAnswer;
@@ -136,13 +141,13 @@ async function runJudgmentScenario(t, protocol, scenario = 'enabled') {
         else assert.equal(input.judgeChecklist, undefined);
         if (reviewed.length === 1) {
           return toolResponse(protocol, 'reject-answer', 'submit_review', {
-            valid: false, report: 'Correct the arithmetic using the saved proof; do not run the command again.',
+            valid: false, criteriaResults:[{criterionId:'sum',status:'failed',reason:'Verification or correction required.',evidenceKind:'tool',evidenceRefs:[]}], report: 'Correct the arithmetic using the saved proof; do not run the command again.',
             verifiedFacts: ['The endpoint pairs each sum to 101.'], gaps: ['The submitted total is incorrect.'],
             recommendations: ['Read the archived output and correct the total.'],
           });
         }
         return toolResponse(protocol, 'accept-answer', 'submit_review', {
-          valid: true, answer: 'The sum is 5050.', report: 'The corrected answer and both students\' evidence agree.', evidenceRefs: references,
+          valid: true, criteriaResults:[{criterionId:'sum',status:'passed',reason:'The saved proof verifies the sum.',evidenceKind:'tool',evidenceRefs:references}], answer: 'The sum is 5050.', report: 'The corrected answer and both students\' evidence agree.', evidenceRefs: references,
         });
       }
       assert.equal(body.model, 'alice-model');
@@ -249,5 +254,11 @@ for (const protocol of ['messages', 'responses', 'chat']) {
 for (const scenario of ['disabled', 'legacy-shadow', 'select-none', 'submission-only', 'error']) {
   test(`chat: ${scenario} Jev preserves the same rejection, recovery and acceptance workflow`, { concurrency: false, timeout: 30000 }, async t => {
     await runJudgmentScenario(t, 'chat', scenario);
+  });
+}
+
+for (const taskMode of ['web_pentest', 'ctf_solve', 'binary_audit', 'pentest']) for (const scenario of ['enabled', 'disabled']) {
+  test(`${taskMode} mode: ${scenario} Jev keeps the rejection, recovery and acceptance workflow`, { concurrency: false, timeout: 30000 }, async t => {
+    await runJudgmentScenario(t, 'chat', scenario, taskMode);
   });
 }

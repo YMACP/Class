@@ -49,7 +49,7 @@ export function parseUniqueJSON(text, label = 'JSON') {
   visit(); return value;
 }
 
-export function toolDefinitions(manager, { includeLegacy = false } = {}) {
+export function toolDefinitions(manager, { includeLegacy = false, agentId } = {}) {
   if (!manager) return [];
   const definitions = [
     definition('read_file', 'Read a UTF-8 file inside the configured working directory.', { path: nonempty('Path relative to the working directory.') }, ['path']),
@@ -71,6 +71,7 @@ export function toolDefinitions(manager, { includeLegacy = false } = {}) {
     reference: nonempty(), studentId: nonempty(), member: nonempty('Alias for studentId.'), kind: nonempty(),
     offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 100 }, byteOffset: { type: 'integer', minimum: 0 }, maxBytes: { type: 'integer', minimum: 4, maximum: 65536 },
   }));
+  definitions.push(...(manager.extensions?.definitionsFor(agentId) || []));
   return definitions;
 }
 const argumentAliases = {
@@ -112,7 +113,21 @@ export function inspectToolCall(rawName, rawArguments, { definitions = [] } = {}
   let input = rawArguments;
   if (typeof input === 'string') { try { input = parseUniqueJSON(input, 'Tool arguments'); } catch (error) { throw invalid('TOOL_ARGUMENT_INVALID', error.message, context); } }
   if (!object(input)) throw invalid('TOOL_ARGUMENT_INVALID', 'Tool arguments must be an object', context);
+  if (byName.get(name).extension === true) {
+    // External JSON Schema can use unions, refs and arbitrary property names.
+    // Keep its arguments intact; the configured MCP server validates its full
+    // schema. Built-in wrapper/alias repair must not rewrite external inputs.
+    let text;
+    try { text = JSON.stringify(input); } catch { throw invalid('TOOL_ARGUMENT_INVALID', 'MCP arguments must be JSON serializable', context); }
+    if (Buffer.byteLength(text) > 1048576) throw invalid('TOOL_ARGUMENT_INVALID', 'MCP arguments exceed size limit', context);
+    const args = parseUniqueJSON(text, 'MCP arguments');
+    return { ...context, name, args, canonicalArguments: args, normalized: false };
+  }
   const schema = byName.get(name).parameters, properties = schema?.properties || {};
+  if (byName.get(name).strictArguments === true) {
+    validateValue(input, schema, name, context);
+    return { ...context, name, args: input, canonicalArguments: input, normalized: false };
+  }
   let normalized = name !== rawName, entries = Object.entries(input);
   const wrapped = wrappers.filter(key => Object.hasOwn(input, key) && object(input[key]) && properties[key]?.type !== 'object');
   if (wrapped.length > 1) throw invalid('TOOL_ARGUMENT_INVALID', 'Tool arguments contain multiple ambiguous wrappers', context);

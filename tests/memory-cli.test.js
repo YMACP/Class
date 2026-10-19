@@ -36,11 +36,12 @@ for (const mode of ['automatic', 'extraction-failure', 'no-memory']) test(`CLI $
         extractionRefs.push(source.reference);
         return send(message(mode === 'extraction-failure' ? { memories: null } : { memories: [{ kind: 'agent', category: 'fact', content: answer, sourceRefs: [source.reference] }] }));
       }
+      if (body.tools?.some(tool => tool.name === 'define_acceptance')) return send(submission('criteria', 'define_acceptance', { criteria: [{ id: 'archive', description: 'Record the requested historical identifier accurately.', evidenceType: 'text' }] }));
       declarations.push({ model: body.model, memoryTools: (body.tools || []).filter(tool => /^(?:memory_|session_)/.test(tool.name)).map(tool => tool.name) });
       if (body.model === 'bob') return; // The CLI aborts its own peer request during review.
       if (body.model === 'alice') return send(submission('cli-answer', 'submit_answer', { content: answer }));
       assert.equal(body.model, 'teacher'); teacherRequests++;
-      return send(submission('cli-review', 'submit_review', { valid: true, report: 'Recorded the requested historical identifier.', answer }));
+      return send(submission('cli-review', 'submit_review', { valid: true, criteriaResults: [{ criterionId: 'archive', status: 'passed', reason: 'The submitted text accurately records the requested identifier.', evidenceKind: 'text', evidenceRefs: [input.answer.submissionId] }], report: 'Recorded the requested historical identifier.', answer }));
     } catch (error) { errors.push(error.message); send({ error: { message: error.message } }, 400); }
   });
   t.after(async () => {

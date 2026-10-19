@@ -241,8 +241,8 @@ test('Jev UI has a two-button switch and shows four preserved selections only af
   assert.match(html, /id="judge-enable"[^>]*type="button"[^>]*aria-pressed="false">启用<\/button><button id="judge-disable"[^>]*type="button"[^>]*aria-pressed="true">停用/);
   assert.match(html, />Jev密钥 /); assert.match(html, /placeholder="输入Jev密钥"/);
   assert.match(html, /<fieldset id="judge-features"[^>]*hidden disabled>/);
-  const taskHeader = html.slice(html.indexOf('<section class="card task-card">'), html.indexOf('id="task-input"'));
-  assert.match(taskHeader, /id="settings-button"[\s\S]*id="judge-settings-button"[^>]*class="workspace-icon-button"[^>]*aria-label="Jev设置"[^>]*title="Jev设置"/);
+  const progressHeader = html.slice(html.indexOf('<section class="card progress-card">'), html.indexOf('id="workflow"'));
+  assert.match(progressHeader, /id="settings-button"[\s\S]*id="judge-settings-button"[^>]*class="workspace-icon-button"[^>]*aria-label="Jev设置"[^>]*title="Jev设置"/);
   assert.equal((html.match(/id="judge-settings-button"/g) || []).length, 1);
   const runSettings = html.slice(html.indexOf('id="settings-dialog"'), html.indexOf('id="judge-settings-dialog"'));
   assert.doesNotMatch(runSettings, /id="judge-settings-button"/);

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { embedSkills } from './embed-skills.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const files = {
@@ -12,6 +13,7 @@ const files = {
 };
 
 export function embedUi() {
+  embedSkills();
   const assets = {};
   for (const [route, [file, contentType, binary]] of Object.entries(files)) {
     const body = fs.readFileSync(path.join(root, 'public', file), binary ? undefined : 'utf8');
@@ -19,6 +21,12 @@ export function embedUi() {
     assets[route] = { body: binary ? body.toString('base64') : body, contentType, ...(binary ? { base64: true } : {}) };
   }
   assets['/index.html'] = assets['/'];
+  // Keep notices available even when distributing only the standalone binary.
+  assets['/third-party-notices.txt'] = {
+    body: ['README.md', 'Bun-LICENSE.txt', 'unpdf-MIT.txt', 'PDFjs-Apache-2.0.txt']
+      .map(file => fs.readFileSync(path.join(root, 'licenses', file), 'utf8')).join('\n\n'),
+    contentType: 'text/plain; charset=utf-8',
+  };
   const target = path.join(root, 'build', 'generated', 'ui-assets.generated.js');
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const temporary = `${target}.${process.pid}.tmp`;

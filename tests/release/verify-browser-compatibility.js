@@ -138,6 +138,7 @@ async function verifyWorkflow(browser, root) {
         for await (const chunk of request) { size += chunk.length; assert.ok(size < 24 * 1024 * 1024); chunks.push(chunk); }
         const body = JSON.parse(Buffer.concat(chunks).toString());
         assert.ok(['browser-alice', 'browser-bob', 'browser-teacher'].includes(body.model));
+        if(body.tools?.some(item=>item.name==='define_acceptance')) { issue(body.model,response,'define_acceptance',{criteria:[{id:'browser',description:'Exercise the owned browser fixture and preserve teacher feedback without replay.',evidenceType:'tool'}]});return; }
         if (!body.tools?.length) {
           assert.equal(body.model, 'browser-teacher');
           response.writeHead(200, { 'content-type': 'application/json' }); response.end(JSON.stringify({ stop_reason: 'end_turn', content: [{ type: 'text', text: '{"memories":[]}' }] })); return;
@@ -169,7 +170,7 @@ async function verifyWorkflow(browser, root) {
         assert.ok(input.answer && input.reviewSnapshot, 'Teacher requires the actual review snapshot');
         assert.ok(++reviews <= 2); const valid = reviews === 2;
         if (valid) { assert.equal(input.answer.content, finalAnswer); assert.equal(feedback, true); }
-        issue(body.model, response, 'submit_review', { valid, ...(valid ? { answer: finalAnswer } : {}), report: valid ? 'Retained browser evidence and revised answer passed.' : 'Revise the final wording using the existing browser evidence.', verifiedFacts: ['Browser fixture actions have journal evidence.'], gaps: valid ? [] : ['Final wording needs revision.'], recommendations: valid ? [] : ['Revise without replaying browser actions.'], evidenceRefs: [...evidence] });
+        issue(body.model, response, 'submit_review', { valid, criteriaResults:[{criterionId:'browser',status:valid?'passed':'failed',reason:valid?'All retained browser operation results and the revised wording passed.':'Final wording needs revision.',evidenceKind:'tool',evidenceRefs:valid?[...evidence]:[]}], ...(valid ? { answer: finalAnswer } : {}), report: valid ? 'Retained browser evidence and revised answer passed.' : 'Revise the final wording using the existing browser evidence.', verifiedFacts: ['Browser fixture actions have journal evidence.'], gaps: valid ? [] : ['Final wording needs revision.'], recommendations: valid ? [] : ['Revise without replaying browser actions.'], evidenceRefs: [...evidence] });
       } catch (error) { modelFailure ||= error; if (!response.headersSent) response.writeHead(500); response.end('{"error":"Local browser fixture assertion failed"}'); }
     });
     mock.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
@@ -195,7 +196,7 @@ async function verifyWorkflow(browser, root) {
       if (!instance) await delay(100);
     }
     assert.equal(instance.pid, application.pid); const address = new URL(instance.url); assert.equal(address.protocol, 'http:'); assert.equal(address.hostname, '127.0.0.1'); assert.match(instance.token, /^[a-f0-9]{64}$/);
-    assert.equal((await api('/health')).version, '1.1.0');
+    assert.equal((await api('/health')).version, '1.2.0');
     const state = await api('/api/state'); assert.equal(await fs.realpath(state.dataDir), await fs.realpath(profile)); assert.equal(state.agents.length, 0);
     for (const [name, role] of [['teacher', 'teacher'], ['alice', 'student'], ['bob', 'student']]) await api('/api/agents', { name: 'Browser ' + name, role, model: 'browser-' + name, baseUrl: 'http://127.0.0.1:' + mock.address().port + '/v1', protocol: 'messages', apiKey: fakeKey });
     await api('/api/settings', { cwd: workspace, voteTimeoutMs: 30000 }, 'PUT');

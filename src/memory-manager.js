@@ -136,8 +136,8 @@ export class MemoryManager {
     if (!this.settings.enabled || this.closed || this.deletedSessions.has(runId) || this.pending > 1000) return;
     this._enqueue(async () => { const run = this.runs.get(runId); if (run) await this._indexRecord(run, record); });
   }
-  captureConversation(runId, value) {
-    if (!this.settings.enabled || this.closed || this.deletedSessions.has(runId) || !this.runs.has(runId)) return;
+  captureConversation(runId, value, { forceArchive = false } = {}) {
+    if ((!this.settings.enabled && !forceArchive) || this.closed || this.deletedSessions.has(runId) || !this.runs.has(runId)) return;
     const run = this.runs.get(runId);
     const record = clean({ ...value, id: randomUUID(), kind: 'conversation', recordedAt: new Date().toISOString() }, this.secrets);
     this.conversations = this.conversations.then(async () => {
@@ -301,9 +301,12 @@ export class MemoryManager {
   async _queueExtraction(session) {
     if (!session || !this.settings.enabled || this.closed || this.closing || this.clearingMemories || this.deletedSessions.has(session.id) || !RUN.test(session.id)
       || !['completed', 'failed', 'stopped', 'interrupted'].includes(session.status) || session.metadata?.demo
-      || this.lastClearedAt && session.startedAt <= this.lastClearedAt
-      || session.metadata?.memoryExtractedAt || this.jobs.some(job => job.type === 'extract' && job.sessionId === session.id)
+      || this.lastClearedAt && (session.startedAt <= this.lastClearedAt || session.metadata?.memoryExtractedAt === this.lastClearedAt)
+      || this.jobs.some(job => job.type === 'extract' && job.sessionId === session.id && job.status !== 'completed')
       || this.jobs.filter(job => ['pending', 'running'].includes(job.status)).length >= 100) return;
+    // Old memoryExtractedAt markers only describe the old bounded pass. Source
+    // receipts, not a session-wide timestamp, establish complete coverage.
+    if (!this.store.extractionBatch(session.id, ADMIN)?.items.length) return;
     await this.queueJob({ type: 'extract', sessionId: session.id, automatic: true });
   }
   async configure(value) {
@@ -347,6 +350,37 @@ export class MemoryManager {
     });
     this.jobsWrite = write.catch(() => {}); return write;
   }
+  async _extractJob(job, signal) {
+    const saved = new Set(job.memoryIds || []);
+    job.skipped ??= 0; job.processedSources ??= 0;
+    while (true) {
+      signal.throwIfAborted();
+      if (this.isBusy() || this.closing || !this.settings.enabled) {
+        this.jobController?.abort(new Error('主任务开始，暂停记忆整理')); signal.throwIfAborted();
+      }
+      const batch = this.store.extractionBatch(job.sessionId, ADMIN);
+      if (!batch?.session || this.deletedSessions.has(job.sessionId)) throw new Error('会话已删除或不可访问');
+      if (['running', 'stopping'].includes(batch.session.status)) throw new Error('会话尚未结束');
+      if (!batch.items.length) {
+        this.store.registerSession({ id: job.sessionId, projectId: batch.session.projectId, metadata: { memoryExtractedAt: new Date().toISOString() } });
+        job.status = 'completed'; job.memoryIds = [...saved]; job.finishedAt = new Date().toISOString();
+        if (!job.processedSources) job.notice = '没有尚待整理的共享来源';
+        return;
+      }
+      // Each source is already a bounded chunk. Every chunk is processed in
+      // order; the old 400-row/48k tail truncation must never advance coverage.
+      const output = await this.summarize({ type: 'extract', items: batch.items.map(({ reference, content }) => ({ reference, content })), signal });
+      signal.throwIfAborted();
+      if (this.isBusy() || this.closing || !this.settings.enabled) {
+        this.pauseBackground(); signal.throwIfAborted();
+      }
+      if (!Array.isArray(output?.memories)) throw new Error('整理模型没有返回有效记忆结果');
+      const result = this.store.commitExtraction({ sessionId: job.sessionId, sources: batch.items, memories: output.memories.slice(0, 12) }, AUTOMATIC);
+      for (const id of result.memoryIds) saved.add(id);
+      job.memoryIds = [...saved]; job.skipped += result.skipped; job.processedSources += result.processed; job.cursor = result.cursor;
+      await this._saveJobs(); await tick();
+    }
+  }
   _runJobs(preferredSessionId) {
     if (this.jobPromise || this.closed || this.closing || this.clearingMemories || !this.store || !this.settings.enabled || this.isBusy() || !this.summarize) return;
     const eligible = item => item.status === 'pending' || item.status === 'failed' && item.retryAt && item.retryAt <= new Date().toISOString();
@@ -356,25 +390,9 @@ export class MemoryManager {
     this.jobController = new AbortController(); const signal = this.jobController.signal;
     this.jobPromise = (async () => {
       job.status = 'running'; job.startedAt = new Date().toISOString(); job.attempts = (job.attempts || 0) + 1; delete job.error; delete job.retryAt; delete job.notice; delete job.finishedAt; await this._saveJobs();
+      if (job.type === 'extract') return this._extractJob(job, signal);
       let items, projectId = job.projectId;
-      if (job.type === 'extract') {
-        const page = await this.store.sessionGet({ sessionId: job.sessionId, limit: 200 }, ADMIN);
-        if (!page?.session) throw new Error('会话已删除或不可访问');
-        if (['running', 'stopping'].includes(page.session.status)) throw new Error('会话尚未结束');
-        projectId = page.session.projectId;
-        const shared = (page.items || page.records).filter(item => item.shared || item.role === 'user');
-        let offset = page.nextOffset;
-        while (offset !== null && offset !== undefined) {
-          signal.throwIfAborted();
-          const next = await this.store.sessionGet({ sessionId: job.sessionId, limit: 200, offset }, ADMIN);
-          if (!next) throw new Error('会话已删除');
-          shared.push(...next.items.filter(item => item.shared || item.role === 'user'));
-          // Preserve recent published outcomes and the original user task.
-          if (shared.length > 400) shared.splice(1, shared.length - 400);
-          offset = next.nextOffset; await tick();
-        }
-        items = shared.reverse().map(item => ({ reference: item.reference, content: item.text }));
-      } else {
+      {
         projectId = 'profile:global';
         items = []; let offset = 0;
         do {
@@ -386,11 +404,7 @@ export class MemoryManager {
       }
       let budget = 48000;
       items = items.filter(item => { budget -= item.content.length; return budget >= 0; });
-      if (!items.length) {
-        if (job.type !== 'extract') throw new Error('没有可供整理的长期记忆');
-        this.store.registerSession({ id: job.sessionId, projectId, metadata: { memoryExtractedAt: new Date().toISOString() } });
-        job.status = 'completed'; job.memoryIds = []; job.notice = '没有需要提取的共享来源'; job.finishedAt = new Date().toISOString(); return;
-      }
+      if (!items.length) throw new Error('没有可供整理的长期记忆');
       // Private input must never enter a shared-output request. Model-supplied
       // citations cannot prove which input influenced the generated wording.
       const groups = new Map();
@@ -418,7 +432,6 @@ export class MemoryManager {
           }
         }
       }
-      if (job.type === 'extract') this.store.registerSession({ id: job.sessionId, projectId, metadata: { memoryExtractedAt: new Date().toISOString() } });
       job.status = 'completed'; job.memoryIds = saved; job.finishedAt = new Date().toISOString();
     })().catch(error => {
       if (signal.aborted) { job.status = 'pending'; job.attempts = Math.max(0, (job.attempts || 1) - 1); job.notice = '整理已暂停，不影响任务执行'; }

@@ -1,4 +1,4 @@
-# 记忆管理（1.1.0）
+# 记忆管理（1.2.0）
 
 [返回首页](../README.md) · [Windows 数据管理](windows.md) · [Linux 数据管理](linux.md)
 

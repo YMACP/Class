@@ -13,7 +13,7 @@ import { getReleaseDirectory } from '../../scripts/release-paths.js';
 import { verificationHost, verifyNativeExecutable, defaultVerificationExecutable } from './windows-verification.js';
 
 const project = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const EXPECTED_VERSION = '1.1.0';
+const EXPECTED_VERSION = '1.2.0';
 const FAKE_KEY = 'class-release-verification-local-fake-key';
 const FINAL_ANSWER = 'Class release verification complete: files, media, planning and isolated browser evidence passed.';
 const expectedTools = ['write_file', 'edit_file', 'glob', 'grep', 'read_image', 'read_pdf', 'plan_write', 'plan_read', 'todo_write', 'todo_read', 'browser'];
@@ -203,6 +203,7 @@ async function main() {
         for await (const chunk of request) { size += chunk.length; check(size <= 24 * 1024 * 1024, 'Model request exceeded the fixture size limit'); chunks.push(chunk); }
         const body = JSON.parse(Buffer.concat(chunks).toString());
         check(['release-alice', 'release-bob', 'release-teacher'].includes(body.model), 'Unknown mock model');
+        if (body.tools?.some(tool => tool.name === 'define_acceptance')) { sendTool(response, 'criteria', 'define_acceptance', {criteria:[{id:'fixture',description:'Verify the release with local fixtures, retained tool evidence and teacher feedback.',evidenceType:'tool'}]}); return; }
         if (!body.tools?.length) {
           const input = (body.messages || []).filter(message => message.role === 'user' && typeof message.content === 'string').map(message => { try { return JSON.parse(message.content); } catch { return null; } }).find(value => ['extract', 'reflect'].includes(value?.type));
           check(body.model === 'release-teacher' && input, 'Unexpected background request');
@@ -248,7 +249,7 @@ async function main() {
         check(state.reviews <= 2, 'Teacher was invoked for more than two candidate reviews');
         const valid = state.reviews === 2;
         if (valid) check(input.answer.content === FINAL_ANSWER && state.feedbackDelivered, 'Final candidate did not incorporate review feedback');
-        issue(body.model, response, 'submit_review', { valid, ...(valid ? { answer: FINAL_ANSWER } : {}), report: valid ? 'All retained fixture evidence and the revised final answer passed.' : 'Verified the tool evidence. Revise the final answer to explicitly cover files, media, planning and isolated browser.', verifiedFacts: ['File and screenshot were independently read by the teacher.'], gaps: valid ? [] : ['The final answer does not state the verified scope.'], recommendations: valid ? [] : ['Revise the answer without repeating completed tool calls.'], evidenceRefs: [...state.evidenceRefs] });
+        issue(body.model, response, 'submit_review', { valid, criteriaResults:[{criterionId:'fixture',status:valid?'passed':'failed',reason:valid?'The successful file/browser operations and revised answer satisfy the fixture.':'The final wording is incomplete.',evidenceKind:'tool',evidenceRefs:valid?input.reviewSnapshot.students.flatMap(member=>member.tools).filter(item=>item.type==='completed'&&['read_file','write_file','edit_file','browser','read_image','read_pdf'].includes(item.action?.name)).map(item=>item.evidenceRef).filter(Boolean).slice(0,3):[]}], ...(valid ? { answer: FINAL_ANSWER } : {}), report: valid ? 'All retained fixture evidence and the revised final answer passed.' : 'Verified the tool evidence. Revise the final answer to explicitly cover files, media, planning and isolated browser.', verifiedFacts: ['File and screenshot were independently read by the teacher.'], gaps: valid ? [] : ['The final answer does not state the verified scope.'], recommendations: valid ? [] : ['Revise the answer without repeating completed tool calls.'], evidenceRefs: [...state.evidenceRefs] });
       } catch (error) {
         mockFailure ??= new Error(`Mock verification failed: ${safeMessage(error)}`);
         if (!response.headersSent) response.writeHead(500, { 'content-type': 'application/json' });

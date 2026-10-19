@@ -61,9 +61,17 @@ async function optionalStat(target) {
 async function writablePath(manager, value, signal, createParents = false) {
   await checkpoint(manager, signal);
   if (value.includes('\0')) throw argumentError('File path contains a NUL character');
-  const base = await fs.realpath(manager.cwd);
-  const target = path.resolve(base, value);
+  const workspace = manager.workspaceRoot || manager.cwd;
+  const base = await fs.realpath(workspace), cwd = await fs.realpath(manager.cwd);
+  let target = path.resolve(cwd, value);
+  // A configured project root may itself be a junction. Resolve that trusted
+  // root consistently while continuing to reject links below it for writes.
+  if (path.isAbsolute(value)) {
+    const relative = path.relative(path.resolve(workspace), target);
+    if (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) target = path.resolve(base, relative);
+  }
   assertInside(base, target);
+  await manager.assertTaskPath?.(base,target);
   const parts = path.relative(base, target).split(path.sep);
   if (!parts[0]) throw argumentError('File path must name a file, not the workspace');
   if (process.platform === 'win32' && parts.some(part => /[:<>"|?*]/.test(part) || /[. ]$/.test(part) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) throw argumentError('Unsupported Windows file path');
@@ -214,7 +222,8 @@ function result(manager, name, data, recordsKey) {
 async function mutate(manager, name, args, signal) {
   const first = await writablePath(manager, args.path, signal);
   return withLock(first.target, signal, async () => {
-    const { base, target } = await writablePath(manager, args.path, signal);
+    const { target } = await writablePath(manager, args.path, signal);
+    const base = await fs.realpath(manager.cwd);
     const original = await snapshot(target, WRITE_LIMIT, manager, signal);
     const before = original ? decodeText(original.buffer) : '';
     let after, replacements = 0;

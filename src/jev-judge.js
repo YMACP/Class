@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { normalizeJudgeConfig } from './judge-config.js';
 
-const POINTS = new Set(['taskDispatch', 'toolCalls', 'toolResults', 'submissionReview']);
+const POINTS = new Set(['taskDispatch', 'toolCalls', 'toolResults', 'submissionReview', 'extensionSelection']);
 const MAX_STATE_CHARS = 48_000;
 const MAX_REQUEST_BYTES = 96 * 1024;
 const MAX_RESPONSE_BYTES = 64 * 1024;
@@ -269,7 +269,9 @@ export class JevJudge {
     // A pre-aborted or disabled request may never race this promise.
     budget.catch(() => {});
     try {
-      if (!this.#config.enabled || (safePoint !== 'unknown' && !this.#config.features[safePoint])) result.status = 'disabled';
+      // Capability routing follows the global Jev switch, independently of
+      // the four context-reduction checkboxes. It never grants permission.
+      if (!this.#config.enabled || (safePoint !== 'unknown' && safePoint !== 'extensionSelection' && !this.#config.features[safePoint])) result.status = 'disabled';
       else {
         controller.signal.throwIfAborted();
         if (safePoint === 'unknown' || !object(request)) throw fail('invalid');

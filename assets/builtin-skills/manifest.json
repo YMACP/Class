@@ -1,0 +1,517 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "id": "ctf-skills",
+      "repository": "https://github.com/ljagiello/ctf-skills",
+      "commit": "3bb6bad1a06664840d07b6e1e69bf19e6ca4672d",
+      "license": "MIT"
+    },
+    {
+      "id": "cybersecurity-skills",
+      "repository": "https://github.com/mukul975/Anthropic-Cybersecurity-Skills",
+      "commit": "54a798831d2266a3ca61ce68a7acb80b81160d57",
+      "license": "Apache-2.0"
+    }
+  ],
+  "skills": [
+    {
+      "id": "ctf-web",
+      "source": "ctf-skills",
+      "upstreamPath": "ctf-web",
+      "name": "ctf-web",
+      "description": "Web漏洞分析与利用(CTF版)",
+      "legacyDescriptions": ["CTF Web 漏洞分析与利用流程", "Web漏洞分析与利用"],
+      "files": [
+        "SKILL.md",
+        "auth-and-access-2.md",
+        "auth-and-access.md",
+        "auth-infra.md",
+        "auth-jwt.md",
+        "client-side-advanced.md",
+        "client-side.md",
+        "cves.md",
+        "field-notes.md",
+        "node-and-prototype.md",
+        "pat-reference.md",
+        "python-requests.md",
+        "scripts/async_fuzz.py",
+        "server-side-2.md",
+        "server-side-advanced-2.md",
+        "server-side-advanced-3.md",
+        "server-side-advanced-4.md",
+        "server-side-advanced.md",
+        "server-side-deser.md",
+        "server-side-exec-2.md",
+        "server-side-exec.md",
+        "server-side.md",
+        "sql-injection.md",
+        "tools-mcp.md",
+        "web3.md"
+      ]
+    },
+    {
+      "id": "ctf-pwn",
+      "source": "ctf-skills",
+      "upstreamPath": "ctf-pwn",
+      "name": "ctf-pwn",
+      "description": "二进制漏洞与利用分析(CTF版)",
+      "legacyDescriptions": ["CTF 二进制漏洞与利用分析"],
+      "files": [
+        "SKILL.md",
+        "advanced-exploits-2.md",
+        "advanced-exploits-3.md",
+        "advanced-exploits-4.md",
+        "advanced-exploits-5.md",
+        "advanced-exploits.md",
+        "advanced.md",
+        "field-notes.md",
+        "format-string.md",
+        "heap-fsop.md",
+        "heap-techniques-2.md",
+        "heap-techniques.md",
+        "kernel-bypass.md",
+        "kernel-techniques.md",
+        "kernel.md",
+        "overflow-basics.md",
+        "rop-advanced.md",
+        "rop-and-shellcode.md",
+        "sandbox-escape.md",
+        "scripts/fmtstr_payload_suite.py",
+        "scripts/ret2libc_two_stage.py",
+        "scripts/seccomp_orw_generator.py",
+        "scripts/shellcraft_asm.py",
+        "scripts/srop_execve.py",
+        "tools-mcp.md"
+      ]
+    },
+    {
+      "id": "ctf-reverse",
+      "source": "ctf-skills",
+      "upstreamPath": "ctf-reverse",
+      "name": "ctf-reverse",
+      "description": "程序逆向与逻辑分析(CTF版)",
+      "legacyDescriptions": ["CTF 程序逆向与校验逻辑还原"],
+      "files": [
+        "SKILL.md",
+        "anti-analysis-ctf.md",
+        "anti-analysis.md",
+        "field-notes.md",
+        "languages-compiled.md",
+        "languages-platforms.md",
+        "languages.md",
+        "mba-simplification.md",
+        "patterns-ctf-2.md",
+        "patterns-ctf-3.md",
+        "patterns-ctf.md",
+        "patterns-runtime.md",
+        "patterns.md",
+        "platforms-hardware.md",
+        "platforms.md",
+        "radare2-r2pipe.md",
+        "tools-advanced-2.md",
+        "tools-advanced.md",
+        "tools-dynamic.md",
+        "tools-emulation.md",
+        "tools-mcp.md",
+        "tools.md",
+        "unicorn-emulation.md"
+      ]
+    },
+    {
+      "id": "ctf-crypto",
+      "source": "ctf-skills",
+      "upstreamPath": "ctf-crypto",
+      "name": "ctf-crypto",
+      "description": "加解密分析(CTF版)",
+      "legacyDescriptions": ["CTF 密码学题目分析与求解"],
+      "files": [
+        "SKILL.md",
+        "advanced-math.md",
+        "classic-ciphers.md",
+        "dh-attacks.md",
+        "ecc-attacks.md",
+        "exotic-crypto-2.md",
+        "exotic-crypto.md",
+        "historical.md",
+        "lattice-and-lwe.md",
+        "modern-ciphers-2.md",
+        "modern-ciphers-3.md",
+        "modern-ciphers-4.md",
+        "modern-ciphers.md",
+        "post-quantum.md",
+        "prng-attacks.md",
+        "prng.md",
+        "rsa-attacks-2.md",
+        "rsa-attacks.md",
+        "stream-ciphers.md",
+        "zkp-and-advanced.md"
+      ]
+    },
+    {
+      "id": "ctf-forensics",
+      "source": "ctf-skills",
+      "upstreamPath": "ctf-forensics",
+      "name": "ctf-forensics",
+      "description": "取证分析(CTF版)",
+      "legacyDescriptions": ["CTF 文件、内存与流量取证"],
+      "files": [
+        "3d-printing.md",
+        "SKILL.md",
+        "disk-advanced.md",
+        "disk-and-memory.md",
+        "disk-recovery.md",
+        "linux-forensics.md",
+        "network-advanced.md",
+        "network.md",
+        "peripheral-capture.md",
+        "signals-and-hardware.md",
+        "steganography.md",
+        "stego-advanced-2.md",
+        "stego-advanced.md",
+        "stego-image.md",
+        "windows.md"
+      ]
+    },
+    {
+      "id": "ctf-misc",
+      "source": "ctf-skills",
+      "upstreamPath": "ctf-misc",
+      "name": "ctf-misc",
+      "description": "杂项求解(CTF版)",
+      "legacyDescriptions": ["CTF 隐写、编码与杂项题目分析"],
+      "files": [
+        "SKILL.md",
+        "bashjails.md",
+        "ctfd-navigation.md",
+        "dns.md",
+        "encodings-advanced.md",
+        "encodings.md",
+        "games-and-vms-2.md",
+        "games-and-vms-3.md",
+        "games-and-vms-4.md",
+        "games-and-vms.md",
+        "linux-privesc.md",
+        "pyjails.md",
+        "rf-sdr.md"
+      ]
+    },
+    {
+      "id": "ctf-osint",
+      "source": "ctf-skills",
+      "upstreamPath": "ctf-osint",
+      "name": "ctf-osint",
+      "description": "开源情报收集(CTF版)",
+      "legacyDescriptions": ["CTF 公开信息检索与线索关联"],
+      "files": [
+        "SKILL.md",
+        "geolocation-and-media.md",
+        "social-media.md",
+        "tools-mcp.md",
+        "web-and-dns.md"
+      ]
+    },
+    {
+      "id": "ctf-malware",
+      "source": "ctf-skills",
+      "upstreamPath": "ctf-malware",
+      "name": "ctf-malware",
+      "description": "恶意样本分析(CTF版)",
+      "legacyDescriptions": ["CTF 恶意样本分析与行为还原"],
+      "files": [
+        "SKILL.md",
+        "c2-and-protocols.md",
+        "pe-and-dotnet.md",
+        "scripts-and-obfuscation.md",
+        "tools-mcp.md"
+      ]
+    },
+    {
+      "id": "ctf-ai-ml",
+      "source": "ctf-skills",
+      "upstreamPath": "ctf-ai-ml",
+      "name": "ctf-ai-ml",
+      "description": "人工智能专项赛题(CTF版)",
+      "legacyDescriptions": ["CTF 人工智能与机器学习安全题目分析"],
+      "files": [
+        "SKILL.md",
+        "adversarial-ml.md",
+        "llm-attacks.md",
+        "model-attacks.md"
+      ]
+    },
+    {
+      "id": "ctf-writeup",
+      "source": "ctf-skills",
+      "upstreamPath": "ctf-writeup",
+      "name": "ctf-writeup",
+      "description": "wp整理(CTF版)",
+      "legacyDescriptions": ["整理 CTF 解题过程与可复现记录"],
+      "files": [
+        "SKILL.md"
+      ]
+    },
+    {
+      "id": "solve-challenge",
+      "source": "ctf-skills",
+      "upstreamPath": "solve-challenge",
+      "name": "CTF解题规划",
+      "description": "CTF题型识别与解题流程组织",
+      "legacyNames": ["solve-challenge"],
+      "legacyDescriptions": ["识别 CTF 题型并组织解题流程"],
+      "files": [
+        "SKILL.md"
+      ]
+    },
+    {
+      "id": "performing-web-application-penetration-test",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/performing-web-application-penetration-test",
+      "name": "Web渗透测试",
+      "description": "Web应用安全测试流程",
+      "legacyDescriptions": ["Web 应用安全测试流程"],
+      "legacyNames": ["performing-web-application-penetration-test"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "scripts/agent.py"
+      ]
+    },
+    {
+      "id": "conducting-api-security-testing",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/conducting-api-security-testing",
+      "name": "API安全测试",
+      "description": "API认证、授权与输入安全测试",
+      "legacyDescriptions": ["API 认证、授权与输入安全测试"],
+      "legacyNames": ["conducting-api-security-testing"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "scripts/agent.py"
+      ]
+    },
+    {
+      "id": "testing-for-broken-access-control",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/testing-for-broken-access-control",
+      "name": "越权检测",
+      "description": "访问控制缺陷与越权测试",
+      "legacyNames": ["testing-for-broken-access-control"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "scripts/agent.py"
+      ]
+    },
+    {
+      "id": "testing-for-business-logic-vulnerabilities",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/testing-for-business-logic-vulnerabilities",
+      "name": "业务逻辑漏洞分析",
+      "description": "业务逻辑漏洞分析与验证",
+      "legacyNames": ["testing-for-business-logic-vulnerabilities"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "scripts/agent.py"
+      ]
+    },
+    {
+      "id": "testing-for-xss-vulnerabilities-with-burpsuite",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/testing-for-xss-vulnerabilities-with-burpsuite",
+      "name": "XSS检测",
+      "description": "使用Burp Suite分析跨站脚本漏洞",
+      "legacyDescriptions": ["使用 Burp Suite 分析跨站脚本漏洞"],
+      "legacyNames": ["testing-for-xss-vulnerabilities-with-burpsuite"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "scripts/agent.py"
+      ]
+    },
+    {
+      "id": "scanning-network-with-nmap-advanced",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/scanning-network-with-nmap-advanced",
+      "name": "网络扫描",
+      "description": "使用Nmap识别端口、服务与网络特征",
+      "legacyDescriptions": ["使用 Nmap 识别端口、服务与网络特征"],
+      "legacyNames": ["scanning-network-with-nmap-advanced"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "scripts/agent.py"
+      ]
+    },
+    {
+      "id": "implementing-attack-surface-management",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/implementing-attack-surface-management",
+      "name": "攻击面发现",
+      "description": "攻击面发现、整理与风险分析",
+      "legacyNames": ["implementing-attack-surface-management"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "references/asm-reference.md",
+        "scripts/agent.py"
+      ]
+    },
+    {
+      "id": "mapping-attack-paths-with-bloodhound-ce",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/mapping-attack-paths-with-bloodhound-ce",
+      "name": "域内攻击路径分析",
+      "description": "使用BloodHound CE分析身份权限攻击路径",
+      "legacyDescriptions": ["使用 BloodHound CE 分析身份权限攻击路径"],
+      "legacyNames": ["mapping-attack-paths-with-bloodhound-ce"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "references/standards.md",
+        "scripts/agent.py"
+      ]
+    },
+    {
+      "id": "performing-binary-exploitation-analysis",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/performing-binary-exploitation-analysis",
+      "name": "二进制漏洞分析",
+      "description": "二进制保护、溢出与ROP利用分析",
+      "legacyDescriptions": ["二进制保护、溢出与 ROP 利用分析"],
+      "legacyNames": ["performing-binary-exploitation-analysis"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "scripts/agent.py"
+      ]
+    },
+    {
+      "id": "reverse-engineering-malware-with-ghidra",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/reverse-engineering-malware-with-ghidra",
+      "name": "Ghidra逆向分析",
+      "description": "使用Ghidra还原二进制逻辑与协议",
+      "legacyDescriptions": ["使用 Ghidra 还原二进制逻辑与协议"],
+      "legacyNames": ["reverse-engineering-malware-with-ghidra"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "scripts/agent.py"
+      ]
+    },
+    {
+      "id": "analyzing-network-traffic-with-wireshark",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/analyzing-network-traffic-with-wireshark",
+      "name": "网络流量分析",
+      "description": "使用Wireshark与tshark分析流量证据",
+      "legacyDescriptions": ["使用 Wireshark 与 tshark 分析流量证据"],
+      "legacyNames": ["analyzing-network-traffic-with-wireshark"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "scripts/agent.py"
+      ]
+    },
+    {
+      "id": "analyzing-memory-dumps-with-volatility",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/analyzing-memory-dumps-with-volatility",
+      "name": "内存取证",
+      "description": "使用Volatility分析内存转储与进程证据",
+      "legacyDescriptions": ["使用 Volatility 分析内存转储与进程证据"],
+      "legacyNames": ["analyzing-memory-dumps-with-volatility"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "scripts/agent.py"
+      ]
+    },
+    {
+      "id": "performing-firmware-extraction-with-binwalk",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/performing-firmware-extraction-with-binwalk",
+      "name": "固件提取",
+      "description": "使用binwalk提取与分析固件组件",
+      "legacyDescriptions": ["使用 binwalk 提取与分析固件组件"],
+      "legacyNames": ["performing-firmware-extraction-with-binwalk"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "scripts/agent.py"
+      ]
+    },
+    {
+      "id": "performing-steganography-detection",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/performing-steganography-detection",
+      "name": "隐写检测",
+      "description": "媒体隐写检测与隐藏数据提取",
+      "legacyNames": ["performing-steganography-detection"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "scripts/agent.py"
+      ]
+    },
+    {
+      "id": "analyzing-linux-elf-malware",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/analyzing-linux-elf-malware",
+      "name": "Linux程序分析",
+      "description": "Linux ELF静态分析、调试与逆向",
+      "legacyDescriptions": ["Linux ELF 静态分析、调试与逆向"],
+      "legacyNames": ["analyzing-linux-elf-malware"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "scripts/agent.py"
+      ]
+    },
+    {
+      "id": "reverse-engineering-android-malware-with-jadx",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/reverse-engineering-android-malware-with-jadx",
+      "name": "Android逆向分析",
+      "description": "使用JADX分析APK代码与资源",
+      "legacyDescriptions": ["使用 JADX 分析 APK 代码与资源"],
+      "legacyNames": ["reverse-engineering-android-malware-with-jadx"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "scripts/agent.py"
+      ]
+    },
+    {
+      "id": "reverse-engineering-dotnet-malware-with-dnspy",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/reverse-engineering-dotnet-malware-with-dnspy",
+      "name": ".NET逆向分析",
+      "description": "使用dnSpy分析.NET程序与混淆",
+      "legacyDescriptions": ["使用 dnSpy 分析 .NET 程序与混淆"],
+      "legacyNames": ["reverse-engineering-dotnet-malware-with-dnspy"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "scripts/agent.py"
+      ]
+    },
+    {
+      "id": "performing-fuzzing-with-aflplusplus",
+      "source": "cybersecurity-skills",
+      "upstreamPath": "skills/performing-fuzzing-with-aflplusplus",
+      "name": "模糊测试",
+      "description": "使用AFL++开展模糊测试与崩溃分析",
+      "legacyDescriptions": ["使用 AFL++ 开展模糊测试与崩溃分析"],
+      "legacyNames": ["performing-fuzzing-with-aflplusplus"],
+      "files": [
+        "SKILL.md",
+        "references/api-reference.md",
+        "scripts/agent.py"
+      ]
+    }
+  ]
+}

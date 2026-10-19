@@ -47,7 +47,8 @@ function answer(response, name, input) {
 }
 function textAnswer(response, value) { response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(value) }] })); }
 function candidate(response, revised = false) { answer(response, 'submit_answer', { content: revised ? 'The owned command resumed and completed after review.' : 'The owned command is running; verify suspension before accepting.', evidence: 'Disposable local shell heartbeat.', completionClaims: [], remainingIssues: [] }); }
-function judgement(valid) { const pending = reviewRequest; reviewRequest = undefined; answer(pending, 'submit_review', { valid, ...(valid ? { answer: 'The owned command resumed and completed after review.' } : {}), report: valid ? 'Resumed command completion verified.' : 'Wait for command completion, then revise the final answer.', verifiedFacts: ['The command was paused during review.'], gaps: valid ? [] : ['Command has not finished.'], recommendations: valid ? [] : ['Resume and wait for the existing command.'], evidenceRefs: [] }); }
+let reviewEvidenceRefs = [];
+function judgement(valid) { const pending = reviewRequest; reviewRequest = undefined; answer(pending, 'submit_review', { valid, criteriaResults:[{criterionId:'command',status:valid?'passed':'failed',reason:valid?'The existing owned command resumed and produced a successful completion result.':'The owned command is still paused and incomplete.',evidenceKind:'tool',evidenceRefs:valid?reviewEvidenceRefs:[]}], ...(valid ? { answer: 'The owned command resumed and completed after review.' } : {}), report: valid ? 'Resumed command completion verified.' : 'Wait for command completion, then revise the final answer.', verifiedFacts: ['The command was paused during review.'], gaps: valid ? [] : ['Command has not finished.'], recommendations: valid ? [] : ['Resume and wait for the existing command.'], evidenceRefs: [] }); }
 async function size(filename) { try { return (await fs.stat(filename)).size; } catch (error) { if (error.code === 'ENOENT') return 0; throw error; } }
 async function readJournal(runId) { return (await fs.readFile(path.join(profile, 'history', runId, 'journal.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line)); }
 async function runPowerShell(script, timeout = 30000) {
@@ -136,8 +137,9 @@ try {
         const input = (body.messages || []).filter(item => item.role === 'user' && typeof item.content === 'string').map(item => { try { return JSON.parse(item.content); } catch { return null; } }).find(item => item?.check || ['extract', 'reflect'].includes(item?.type));
         assert.ok(input); textAnswer(response, input.check ? { ok: true } : { memories: [] }); return;
       }
+      if(body.tools?.some(item=>item.name==='define_acceptance')) {answer(response,'define_acceptance',{criteria:[{id:'command',description:'Pause and resume the existing owned command, then verify actual successful completion.',evidenceType:'tool'}]});return;}
       if (body.model === 'platform-alice') { assert.ok(!aliceRequest, 'Duplicate pending Alice request'); aliceRequest = response; return; }
-      if (body.model === 'platform-teacher') { assert.ok(!reviewRequest); reviews++; reviewRequest = response; return; }
+      if (body.model === 'platform-teacher') { const input=JSON.parse(body.messages.find(item=>item.role==='user'&&typeof item.content==='string').content);reviewEvidenceRefs=input.reviewSnapshot.students.flatMap(member=>member.tools).filter(item=>item.type==='completed'&&item.action?.name==='run_command').map(item=>item.evidenceRef).filter(Boolean); assert.ok(!reviewRequest); reviews++; reviewRequest = response; return; }
       assert.equal(body.model, 'platform-bob');
       if (bobCalls++ === 0) {
         const ticks = path.join(workspace, mode + '-ticks.txt'), finish = path.join(workspace, 'finish.txt');

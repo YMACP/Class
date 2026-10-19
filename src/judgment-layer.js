@@ -3,7 +3,7 @@ import { JevJudge } from './jev-judge.js';
 import { normalizeJudgeConfig } from './judge-config.js';
 
 const FILTERABLE = new Set(['shell', 'run_command', 'web_fetch', 'web_search']);
-const INTERNAL = new Set(['sleep', 'read_evidence', 'session_search', 'session_get', 'memory_search', 'memory_get', 'memory_propose', 'memory_assess']);
+const INTERNAL = new Set(['sleep', 'read_evidence', 'context_read', 'session_search', 'session_get', 'memory_search', 'memory_get', 'memory_propose', 'memory_assess']);
 const CONFIDENT = 0.95;
 const MAX_CHUNKS = 14;
 const CHUNK_SIZE = 1400;
@@ -30,6 +30,27 @@ function chunksOf(text) {
 }
 function protectedText(text) {
   return /\b(error|warning|failed?|failure|exception|traceback|panic|assert(?:ion)?|passed?|success|verified|verification|expected|actual)\b|错误|失败|警告|通过|验证|验收|结论|冲突|```|~~~|^\s*(?:diff --git|@@|[+-]{3}|(?:const|let|var|function|class|import|export|def|return)\s)|^\s*[{}[\]]/im.test(text);
+}
+function pentestEvidence(text) {
+  // Reproduction conditions can span several chunks. Keep the complete output
+  // locally instead of asking the helper to discard pieces of that evidence.
+  return /\b(?:evidence(?:refs?)?|outputRef|callId|reproduc(?:e|ible|tion)|preconditions?|unverified|unconfirmed|pending verification|blocked|scope|constraints?|PoC|authentication|authorization|identity|session|cookie|baseline|response comparison|control response)\b|^\s*(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|CONNECT|TRACE)\s+\S+\s+HTTP\/|^\s*HTTP\/(?:1(?:\.[01])?|2|3)\s+\d{3}\b|(?:^|\s)curl(?:\.exe)?\s|证据|复现|前提|待验证|待核验|未验证|未确认|受阻|授权范围|约束|限制|认证|身份|响应对比|对照响应|基线/im.test(text);
+}
+function ctfEvidence(text) {
+  // Keep answer candidates and the surrounding derivation together. These
+  // markers are conservative hints, not a claim that any candidate is correct.
+  return pentestEvidence(text)
+    || /\b(?:flag|ciphertext|plaintext|nonce|modulus|offset|leak|endianness|libc|registers?|accepted|rejected)\b|\b0x[0-9a-f]+\b|\b[a-z0-9_]{1,32}\{[^{}\r\n]{1,512}\}|^\s*(?:n|e|d|p|q|c|m|iv|key|seed)\s*[:=]|候选答案|最终答案|明文|密文|密钥|偏移|寄存器|回代|平台反馈/im.test(text);
+}
+function binaryEvidence(text) {
+  // Preserve the relationship between an input, its runtime state and a crash.
+  // These markers protect evidence, not prove that the issue is exploitable.
+  return pentestEvidence(text)
+    || /\b(?:crash(?:ed)?|segfault|SIGSEGV|SIGABRT|SIGBUS|AddressSanitizer|UndefinedBehaviorSanitizer|heap-buffer-overflow|stack-buffer-overflow|use-after-free|double-free|backtrace|call stack|registers?|offset|endianness|faulting|exception address|access violation|corpus|coverage|harness|sha256)\b|\b0x[0-9a-f]+\b|^\s*(?:rip|eip|rsp|esp|rbp|ebp|pc|sp)\s*[:=]|崩溃|异常地址|调用栈|寄存器|偏移|越界|释放后使用|触发样本|输入字节|目标摘要|字节序|测试桩/im.test(text);
+}
+function networkPentestEvidence(text) {
+  return pentestEvidence(text)
+    || /\b(?:BloodHound|GenericAll|GenericWrite|WriteDacl|WriteOwner|DCSync|CVE-\d{4}-\d+)\b|^\s*\d{1,5}\/(?:tcp|udp)\s+(?:open|closed|filtered|open\|filtered)\b|账号角色|权限关系|访问路径|对照账号|测试身份|目标归属|采集时间/im.test(text);
 }
 function isStructured(text) {
   if (!/^\s*[\[{]/.test(text)) return false;
@@ -94,6 +115,27 @@ export class JudgmentLayer {
     return { ...input, judgeGuidance: { notice: NOTICE, reminders, referenceFocus: focus } };
   }
 
+  async contextCompaction(input, { signal } = {}) {
+    // Reuse the existing task-dispatch opt-in. This is priority advice only:
+    // local budgets trigger compression and the member's model writes it.
+    if (!this.enabled('taskDispatch')) return undefined;
+    const decision = await this.decide('taskDispatch', { state: {
+      phase: 'context_compaction', task: brief(input.task, 3500),
+      estimatedTokens: input.beforeTokens, budget: input.budget,
+      rule: 'Only advise which information deserves special emphasis in a continuation summary. Never authorize deletion, modify the original task, claim completion, or treat a summary as verified evidence.'
+    }, questions: {
+      evidence: bool('Does this task depend on concrete evidence, file paths, commands or source references that must be preserved in the summary?'),
+      constraints: bool('Does this task state specific restrictions, acceptance criteria or dependencies that should be emphasized?'),
+      verification: bool('Will the task require distinguishing confirmed results from hypotheses, failures or unfinished checks?'),
+    } }, signal);
+    if (!decision?.applied || decision.status !== 'ok') return undefined;
+    return { notice: NOTICE + ' 仅提示摘要重点；不得据此删除原文或降低本地保留要求。', focus: [
+      ...(yes(decision, 'evidence') ? ['Preserve exact evidence references, paths and observable results.'] : []),
+      ...(yes(decision, 'constraints') ? ['Preserve constraints, acceptance criteria and dependency order.'] : []),
+      ...(yes(decision, 'verification') ? ['Separate verified work, unverified claims, failed routes and pending checks.'] : []),
+    ] };
+  }
+
   async beforeToolCall({ task, agentId, name, args }, { signal } = {}) {
     if (!this.enabled('toolCalls') || INTERNAL.has(name)) return undefined;
     const previous = this.recent.get(agentId) || [];
@@ -121,9 +163,13 @@ export class JudgmentLayer {
     return hints.length ? { notice: NOTICE, hints } : undefined;
   }
 
-  async toolResult({ task, name, args, result }, { signal } = {}) {
+  async toolResult({ task, name, args, result }, { signal, taskMode = 'auto' } = {}) {
     if (!this.enabled('toolResults') || !FILTERABLE.has(name) || !result || typeof result.output !== 'string') return result;
     if (result.error || result.success === false || result.exitCode && result.exitCode !== 0 || result.media?.length || result.images?.length) return result;
+    if (taskMode === 'web_pentest' && pentestEvidence(result.output)) return result;
+    if (taskMode === 'ctf_solve' && ctfEvidence(result.output)) return result;
+    if (taskMode === 'binary_audit' && binaryEvidence(result.output)) return result;
+    if (taskMode === 'pentest' && networkPentestEvidence(result.output)) return result;
     // A caller without durable evidence is never allowed to lose original text.
     const reference = result.outputRef || result.evidenceRef;
     if (typeof reference !== 'string' || !reference || result.output.length < this.config.minOutputChars || isStructured(result.output) || containsSource(result.output)) return result;

@@ -114,7 +114,7 @@ test('HTTP task startup keeps extraction paused through async preparation and re
   assert.equal(summaryCalls, 3); assert.equal(job.status, 'completed');
 });
 
-test('interrupted extraction retries the same job with reordered notes without losing content or reviving paused and deleted memories', { timeout: 12000 }, async t => {
+test('failed extraction batch rolls back atomically and retries without reviving paused or deleted memories', { timeout: 12000 }, async t => {
   const fixture = await temporaryDirectory(t), { directory } = fixture;
   let memory, calls = 0, busy = true;
   const managers = [];
@@ -136,18 +136,19 @@ test('interrupted extraction retries the same job with reordered notes without l
   const saveMemory = store.saveMemory;
   let writes = 0;
   const fault = t.mock.method(store, 'saveMemory', function (value, context) {
-    if (++writes === 2) throw new Error('isolated interruption after the first durable memory');
+    if (++writes === 2) throw new Error('isolated interruption inside an atomic extraction batch');
     return saveMemory.call(this, value, context);
   });
   const job = await memory.queueJob({ type: 'extract', sessionId: source.id, automatic: true });
   busy = false; memory._runJobs(); await memory.jobPromise;
   assert.equal(job.status, 'failed'); assert.equal(calls, 1);
   const partial = store.memorySearch({ query: 'Already persisted note A' }, admin).items[0];
-  assert.ok(partial); assert.equal(store.listMemories({}, admin).total, 2);
+  assert.equal(partial, undefined); assert.equal(store.listMemories({}, admin).total, 1);
+  assert.equal(store.extractionBatch(source.id, admin).items.length, 1);
   assert.equal(store.sessionGet({ sessionId: source.id }, admin).session.metadata.memoryExtractedAt, undefined);
   fault.mock.restore();
-  // A process exit leaves the durable running job beside its already committed
-  // first note; reopen must retry that same job rather than depend on array order.
+  // A process exit must retry the uncommitted source batch, regardless of the
+  // order of the notes returned by the next model response.
   job.status = 'running'; delete job.retryAt;
   await memory._saveJobs(); await memory.close();
   busy = true;
@@ -160,7 +161,7 @@ test('interrupted extraction retries the same job with reordered notes without l
   busy = false; memory._runJobs(); await memory.jobPromise;
   assert.equal(calls, 2); assert.equal(retry.status, 'completed', retry.error);
   const reopened = await memory.requireStore();
-  assert.equal(reopened.memoryGet(partial.id, admin).content, 'Already persisted note A');
+  assert.equal(reopened.memorySearch({ query: 'Already persisted note A' }, admin).items[0].content, 'Already persisted note A');
   assert.deepEqual(reopened.memorySearch({}, admin).items.map(item => item.content).sort(), ['Already persisted note A', 'New note B', 'New note C']);
   assert.equal(reopened.memoryGet(paused.id, admin).status, 'paused');
   assert.equal(reopened.memoryGet(deleted.id, admin), null);

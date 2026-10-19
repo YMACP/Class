@@ -21,7 +21,7 @@ export function buildLinuxExecutable({ architecture, entry, output, definitions 
     assertLinuxExecutable(fs.readFileSync(output), architecture);
   }
   const packageInfo = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  if (packageInfo.version !== '1.1.0') throw new Error('Keep the Class release version at 1.1.0.');
+  if (packageInfo.version !== '1.2.0') throw new Error('Keep the Class release version at 1.2.0.');
   const hostPackage = `bun-${process.platform === 'win32' ? 'windows' : 'linux'}-x64-baseline`;
   const local = path.join(root, 'node_modules', '@oven', hostPackage, 'bin', process.platform === 'win32' ? 'bun.exe' : 'bun');
   const bun = process.env.BUN_EXECUTABLE || process.env.BUN_EXE || (process.versions.bun ? process.execPath : fs.existsSync(local) ? local : 'bun');

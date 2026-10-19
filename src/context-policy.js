@@ -2,6 +2,9 @@
 // Providers tokenize differently, so this is a conservative local estimate,
 // not a claim that the provider accepted or billed this number of tokens.
 export const CONTEXT_1M_TOKENS = 1_000_000;
+// A local working-window fallback, not a model-name-based capability claim.
+// Explicit provider configuration and the existing 1M option take precedence.
+export const DEFAULT_CONTEXT_TOKENS = 128_000;
 export const CONTEXT_SAFETY_TOKENS = 32_768;
 export const CONTEXT_1M_UNSUPPORTED_MESSAGE = '当前模型或接口不支持 1M 上下文，请取消勾选「1M」后重试。';
 
@@ -21,8 +24,15 @@ export function estimateContextTokens(value) {
   return Math.ceil(ascii / 3) + other * 2;
 }
 
-export function contextInputBudget({ outputTokens = 8192, overhead } = {}) {
-  return Math.max(1, CONTEXT_1M_TOKENS - CONTEXT_SAFETY_TOKENS - outputTokens - estimateContextTokens(overhead));
+export function contextWindowTokens({ context1M = false, contextWindowTokens: configured } = {}) {
+  if (configured !== undefined && (!Number.isSafeInteger(configured) || configured < 4096 || configured > 16_000_000)) throw Error('contextWindowTokens must be an integer between 4096 and 16000000');
+  return configured ?? (context1M ? CONTEXT_1M_TOKENS : DEFAULT_CONTEXT_TOKENS);
+}
+
+export function contextInputBudget({ outputTokens = 8192, overhead, ...config } = {}) {
+  const capacity = contextWindowTokens(config);
+  const safety = Math.min(CONTEXT_SAFETY_TOKENS, Math.max(1024, Math.floor(capacity * 0.04)));
+  return Math.max(1, capacity - safety - outputTokens - estimateContextTokens(overhead));
 }
 
 // Only explicit capability evidence in a bounded invalid-request response can
@@ -60,26 +70,31 @@ export function isContext1MUnsupported(body, { context1M = false, status, struct
     || new RegExp(before + '[ :,-]*(?:(?:a|the|this|requested)[ -]+)?' + subject).test(message);
 }
 
-// Remove only complete protocol groups. Their drop callback releases cached
-// outputs and replay IDs together, retaining lightweight execution receipts.
-export function compactProtocolHistory(history, groups, prefixLength, dropped, { context1M = false, outputTokens = 8192, overhead } = {}) {
-  if (!context1M) {
-    // Preserve the previous policy exactly for existing and unchecked members.
-    let bytes = Buffer.byteLength(JSON.stringify(history));
-    while (groups.length > 1 && (groups.length > 30 || bytes > 512 * 1024)) {
-      const group = groups.shift();
-      history.splice(prefixLength, typeof group === 'number' ? group : group.length);
-      dropped?.(group);
-      bytes = Buffer.byteLength(JSON.stringify(history));
+// Plan before mutation so the caller can summarize the exact old groups.
+// Keep four recent groups when possible, and always at least the latest group.
+export function planProtocolCompaction(history, groups, prefixLength, config = {}) {
+  const budget = contextInputBudget(config), beforeTokens = estimateContextTokens(history);
+  const trigger = Math.floor(budget * 0.8), target = Math.floor(budget * 0.55);
+  let count = 0, end = prefixLength, remaining = beforeTokens;
+  if (beforeTokens > trigger) {
+    while (count < groups.length - 1 && remaining > target) {
+      if (groups.length - count <= 4 && remaining <= trigger) break;
+      const group = groups[count++], length = typeof group === 'number' ? group : group.length;
+      remaining -= estimateContextTokens(history.slice(end, end + length));
+      end += length;
     }
-    return;
   }
-  const budget = contextInputBudget({ outputTokens, overhead });
-  let tokens = estimateContextTokens(history);
-  while (groups.length > 1 && tokens > budget) {
+  return { count, end, beforeTokens, budget };
+}
+
+// Their drop callback releases cached outputs and replay IDs together,
+// retaining lightweight execution receipts. Never split native call/results.
+export function compactProtocolHistory(history, groups, prefixLength, dropped, config = {}) {
+  const plan = planProtocolCompaction(history, groups, prefixLength, config);
+  for (let index = 0; index < plan.count; index++) {
     const group = groups.shift();
-    history.splice(prefixLength, typeof group === 'number' ? group : group.length);
-    dropped?.(group);
-    tokens = estimateContextTokens(history);
+    const removed = history.splice(prefixLength, typeof group === 'number' ? group : group.length);
+    dropped?.(group, removed);
   }
+  return plan;
 }

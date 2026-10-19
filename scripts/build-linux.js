@@ -10,7 +10,9 @@ import { writeReleaseFile } from './release-files.js';
 const { architecture } = linuxBuildOptions();
 const directory = getLinuxReleaseDirectory(architecture);
 prepareAssets({ platform: 'linux', architecture });
-const result = buildLinuxExecutable({ architecture, entry: 'src/desktop.js', output: path.join(directory, 'Class') });
+const packageInfo = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+const result = buildLinuxExecutable({ architecture, entry: 'src/desktop.js', output: path.join(directory, 'Class'),
+  definitions: ['CLASS_DESKTOP_COMPILED=true', `CLASS_DESKTOP_VERSION=${JSON.stringify(packageInfo.version)}`] });
 const notices = ['README.md', 'Bun-LICENSE.txt', 'unpdf-MIT.txt', 'PDFjs-Apache-2.0.txt'].map(name => fs.readFileSync(path.join(root, 'licenses', name), 'utf8')).join('\n\n');
 writeReleaseFile(path.join(directory, 'THIRD_PARTY_NOTICES.txt'), notices);
 writeReleaseFile(path.join(directory, 'README.txt'), fs.readFileSync(path.join(root, 'docs', 'linux-release.txt')));
